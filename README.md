@@ -17,9 +17,8 @@ ESP8266 + PHP + MySQL HTTP Polling 架构的物联网控制平台。
 | [`v3.20`](../../tree/v3.20) | v3.20 | 组合开关、预设功能、日/夜主题 | 批量控制、场景联动 |
 | [`v3.22`](../../tree/v3.22) | v3.22 | Token 与密码绑定安全修复 | 安全加固版 |
 | [`v3.30`](../../tree/v3.30) | v3.30 | OTA 固件更新、Web 端远程刷机 | 远程固件维护 |
-| [`v3.31`](../../tree/v3.31) | v3.31 | JWT 退出登录销毁、Token 版本校验 | **推荐部署版本** |
 
-> **建议新用户直接使用 `v3.31` 分支。**
+> **建议新用户直接使用 `v3.30` 分支。** v3.31 暂因登录 BUG 已下线，修复后将重新发布。
 
 ### 如何获取某个版本
 
@@ -27,10 +26,10 @@ ESP8266 + PHP + MySQL HTTP Polling 架构的物联网控制平台。
 # 克隆仓库后切换到对应分支
 git clone https://github.com/en55awa/iot-control-system.git
 cd iot-control-system
-git checkout v3.31
+git checkout v3.30
 
 # 或只下载某个分支
-git clone -b v3.31 https://github.com/en55awa/iot-control-system.git
+git clone -b v3.30 https://github.com/en55awa/iot-control-system.git
 ```
 
 ---
@@ -69,10 +68,9 @@ git clone -b v3.31 https://github.com/en55awa/iot-control-system.git
 | v2.10 | 多用户隔离、设备共享、管理员系统 | 多人协作、多设备管理 |
 | v3.20 | 组合开关、预设功能 | 批量控制、场景联动 |
 | v3.22 | Token 与密码绑定安全修复 | 安全加固版 |
-| v3.30 | OTA 固件更新、Web 端远程刷机 | 远程固件维护 |
-| v3.31 | JWT 退出登录销毁、Token 版本校验 | **推荐部署版本** |
+| v3.30 | OTA 固件更新、Web 端远程刷机 | **推荐部署版本** |
 
-> **建议新用户直接使用 v3.31。** 如需从旧版升级，请阅读下方「版本升级路径」章节。
+> **建议新用户直接使用 v3.30。** 如需从旧版升级，请阅读下方「版本升级路径」章节。
 
 ---
 
@@ -173,7 +171,7 @@ define('RESET_KEY', '你的随机密钥');
 
 ## 部署步骤（全新安装）
 
-以 **v3.31** 为例，其他版本步骤相同。
+以 **v3.30** 为例，其他版本步骤相同。
 
 ### 第一步：创建数据库
 
