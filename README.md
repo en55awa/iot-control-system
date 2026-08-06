@@ -6,20 +6,38 @@ ESP8266 + PHP + MySQL HTTP Polling 架构的物联网控制平台。
 
 ---
 
-## 目录结构
+## 版本分支
+
+每个版本是一个独立的 Git 分支，切换分支即可获取对应版本的完整代码：
+
+| 分支 | 版本 | 关键特性 | 适用场景 |
+|------|------|---------|---------|
+| [`v1.01`](../../tree/v1.01) | v1.01 | 单用户、安全审计修复 | 入门体验、单设备控制 |
+| [`v2.10`](../../tree/v2.10) | v2.10 | 多用户隔离、设备共享、管理员系统 | 多人协作、多设备管理 |
+| [`v3.20`](../../tree/v3.20) | v3.20 | 组合开关、预设功能、日/夜主题 | 批量控制、场景联动 |
+| [`v3.22`](../../tree/v3.22) | v3.22 | Token 与密码绑定安全修复 | **推荐部署版本** |
+
+> **建议新用户直接使用 `v3.22` 分支。**
+
+### 如何获取某个版本
+
+```bash
+# 克隆仓库后切换到对应分支
+git clone https://github.com/en55awa/iot-control-system.git
+cd iot-control-system
+git checkout v3.22
+
+# 或只下载某个分支
+git clone -b v3.22 https://github.com/en55awa/iot-control-system.git
+```
+
+---
+
+## 分支内目录结构
+
+每个分支的文件结构如下：
 
 ```
-public/
-├── README.md                  ← 本文件
-├── iot-system-Ver1.01/        ← v1.01 安全审计版（单用户）
-├── iot-system-Ver2.10/        ← v2.10 多用户隔离版
-├── iot-system-Ver3.20/        ← v3.20 组合开关 + 预设版
-└── iot-system-Ver3.22/        ← v3.22 安全修复版（最新稳定版）
-```
-
-每个版本目录结构：
-```
-iot-system-VerX.XX/
 ├── backend/
 │   ├── api.php                ← API 路由入口
 │   ├── config.php             ← 数据库配置（加载 secrets.php）
@@ -36,7 +54,7 @@ iot-system-VerX.XX/
 │       ├── config.h           ← 【需配置】ESP8266 配置
 │       └── iot_firmware.ino   ← 固件源码
 ├── README.md                  ← 版本说明
-└── VERSION.md                 ← 版本更新日志
+└── VERSION.md                 ← 版本更新日志（v2.10+）
 ```
 
 ---
