@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>IoT 控制系统</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0f1923;--bg2:#1a2736;--bg3:#243447;
+  --ink:#e4e8ec;--muted:#7a8a9e;--rule:#2d3e50;
+  --accent:#00c896;--accent-dim:#00a87a;--danger:#ff4757;--warn:#ffa502;
+  --radius:10px;
+}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink);min-height:100vh;font-size:15px;line-height:1.5}
+button{cursor:pointer;border:none;font:inherit}input,select{font:inherit}
+
+/* ===== 登录 ===== */
+#loginPage{display:flex;justify-content:center;align-items:center;min-height:100vh;padding:20px}
+.login-box{background:var(--bg2);border:1px solid var(--rule);border-radius:var(--radius);padding:40px 32px;width:100%;max-width:360px}
+.login-box h1{font-size:22px;margin-bottom:6px}
+.login-box p{color:var(--muted);font-size:13px;margin-bottom:28px}
+.login-box label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px}
+.login-box input{width:100%;padding:10px 12px;background:var(--bg3);border:1px solid var(--rule);border-radius:6px;color:var(--ink);font-size:14px;margin-bottom:16px;outline:none;transition:border .2s}
+.login-box input:focus{border-color:var(--accent)}
+.btn-primary{width:100%;padding:11px;background:var(--accent);color:#fff;border-radius:6px;font-size:15px;font-weight:600;transition:background .2s}
+.btn-primary:hover{background:var(--accent-dim)}
+.login-error{color:var(--danger);font-size:13px;margin-top:12px;text-align:center;min-height:20px}
+
+/* ===== 主框架 ===== */
+#appPage{display:none;flex-direction:column;min-height:100vh}
+header{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;background:var(--bg2);border-bottom:1px solid var(--rule);position:sticky;top:0;z-index:10}
+header h1{font-size:17px}
+header button{background:none;color:var(--muted);font-size:13px;padding:6px 12px;border-radius:6px;transition:all .2s}
+header button:hover{color:var(--ink);background:var(--bg3)}
+main{flex:1;padding:20px;max-width:600px;margin:0 auto;width:100%;padding-bottom:80px}
+
+/* ===== Tabs ===== */
+.tabs{display:flex;gap:6px;margin-bottom:20px}
+.tab-btn{flex:1;padding:8px;background:var(--bg2);border:1px solid var(--rule);border-radius:6px;color:var(--muted);font-size:13px;font-weight:500;transition:all .2s}
+.tab-btn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.tab-btn:hover:not(.active){background:var(--bg3);color:var(--ink)}
+.tab-content{display:none}.tab-content.active{display:block}
+
+/* ===== 设备卡片 ===== */
+.device-card{background:var(--bg2);border:1px solid var(--rule);border-radius:var(--radius);padding:20px;margin-bottom:14px}
+.device-card .dev-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+.device-card .dev-name{font-size:16px;font-weight:600}
+.device-card .dev-id{font-size:12px;color:var(--muted);margin-bottom:12px}
+.dev-status{font-size:11px;padding:3px 8px;border-radius:10px;font-weight:500}
+.dev-status.online{background:rgba(0,200,150,.15);color:var(--accent)}
+.dev-status.offline{background:rgba(255,71,87,.15);color:var(--danger)}
+.dev-status.disabled{background:rgba(255,165,2,.15);color:var(--warn)}
+.dev-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle}
+.dev-dot.on{background:var(--accent);box-shadow:0 0 6px var(--accent)}
+.dev-dot.off{background:var(--danger);box-shadow:0 0 6px var(--danger)}
+
+/* ===== 开关 ===== */
+.switches{display:flex;gap:10px;flex-wrap:wrap}
+.switch-item{flex:1;min-width:120px;background:var(--bg3);border-radius:8px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between}
+.switch-item .sw-info{display:flex;flex-direction:column;gap:2px}
+.switch-item .sw-label{font-size:14px;font-weight:500}
+.switch-item .sw-pin{font-size:11px;color:var(--muted)}
+.switch-item .sw-del{background:none;color:var(--muted);font-size:11px;margin-top:2px;padding:0;border-bottom:1px dashed var(--muted);transition:color .2s}
+.switch-item .sw-del:hover{color:var(--danger)}
+.switch{position:relative;width:48px;height:26px;flex-shrink:0}
+.switch input{opacity:0;width:0;height:0}
+.switch .slider{position:absolute;inset:0;background:var(--rule);border-radius:13px;transition:.3s;cursor:pointer}
+.switch .slider::before{content:'';position:absolute;width:20px;height:20px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.3s}
+.switch input:checked+.slider{background:var(--accent)}
+.switch input:checked+.slider::before{transform:translateX(22px)}
+
+/* ===== 引脚配置 ===== */
+.pin-config{margin-top:12px;padding-top:12px;border-top:1px solid var(--rule)}
+.pin-config h4{font-size:12px;color:var(--muted);font-weight:500;margin-bottom:8px}
+.pin-add-row{display:flex;gap:6px;margin-bottom:8px}
+.pin-add-row input,.pin-add-row select{flex:1;padding:7px 10px;background:var(--bg3);border:1px solid var(--rule);border-radius:5px;color:var(--ink);font-size:13px;outline:none}
+.pin-add-row input:focus,.pin-add-row select:focus{border-color:var(--accent)}
+.pin-add-row input{flex:2}
+.btn-pin-add{padding:7px 14px;background:var(--accent);color:#fff;border-radius:5px;font-size:12px;font-weight:600;white-space:nowrap}
+.btn-pin-add:hover{background:var(--accent-dim)}
+
+/* ===== 设备详情 ===== */
+.device-detail{background:var(--bg2);border:1px solid var(--rule);border-radius:var(--radius);padding:20px;margin-bottom:14px}
+.back-btn{background:none;color:var(--muted);font-size:13px;padding:4px 0;margin-bottom:12px;display:inline-block;cursor:pointer;border:none}
+.back-btn:hover{color:var(--ink)}
+.detail-wifi{display:flex;gap:16px;flex-wrap:wrap;margin-top:14px;padding:12px;background:var(--bg3);border-radius:8px}
+.wifi-item{flex:1;min-width:100px}
+.wifi-item .wifi-label{font-size:11px;color:var(--muted)}
+.wifi-item .wifi-val{font-size:15px;font-weight:600;margin-top:2px}
+.rssi-good{color:var(--accent)}.rssi-mid{color:var(--warn)}.rssi-bad{color:var(--danger)}
+
+/* ===== WiFi 日志表 ===== */
+.log-section{margin-top:16px}
+.log-section h4{font-size:13px;color:var(--muted);margin-bottom:8px;font-weight:500}
+.log-table{width:100%;border-collapse:collapse;font-size:13px}
+.log-table th{text-align:left;color:var(--muted);font-weight:500;padding:6px 8px;border-bottom:1px solid var(--rule)}
+.log-table td{padding:6px 8px;border-bottom:1px solid rgba(45,62,80,.4)}
+
+/* ===== Key 管理 ===== */
+.key-card{background:var(--bg2);border:1px solid var(--rule);border-radius:var(--radius);padding:14px 16px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+.key-card .key-val{font-family:monospace;font-size:14px;letter-spacing:1px}
+.key-card .key-remark{font-size:12px;color:var(--muted)}
+.key-status{font-size:11px;padding:2px 8px;border-radius:8px}
+.key-status.active{background:rgba(0,200,150,.15);color:var(--accent)}
+.key-status.disabled{background:rgba(255,165,2,.15);color:var(--warn)}
+.key-actions{display:flex;gap:6px}
+.btn-sm{padding:5px 10px;border-radius:5px;font-size:12px;font-weight:500;transition:all .2s}
+.btn-sm.toggle-on{background:rgba(0,200,150,.15);color:var(--accent)}.btn-sm.toggle-on:hover{background:rgba(0,200,150,.25)}
+.btn-sm.toggle-off{background:rgba(255,165,2,.15);color:var(--warn)}.btn-sm.toggle-off:hover{background:rgba(255,165,2,.25)}
+.btn-sm.btn-del{background:rgba(255,71,87,.1);color:var(--danger)}.btn-sm.btn-del:hover{background:rgba(255,71,87,.2)}
+.btn-add{width:100%;padding:12px;background:var(--bg2);border:1px dashed var(--rule);border-radius:var(--radius);color:var(--muted);font-size:14px;transition:all .2s;margin-bottom:14px}
+.btn-add:hover{border-color:var(--accent);color:var(--accent)}
+
+/* ===== 设置 ===== */
+.settings-section{background:var(--bg2);border:1px solid var(--rule);border-radius:var(--radius);padding:20px;margin-bottom:14px}
+.settings-section h3{font-size:14px;margin-bottom:14px;color:var(--muted);font-weight:500}
+.settings-section label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px}
+.settings-section input{width:100%;padding:10px 12px;background:var(--bg3);border:1px solid var(--rule);border-radius:6px;color:var(--ink);font-size:14px;margin-bottom:12px;outline:none}
+.settings-section input:focus{border-color:var(--accent)}
+.btn-save{padding:9px 20px;background:var(--accent);color:#fff;border-radius:6px;font-size:13px;font-weight:600}.btn-save:hover{background:var(--accent-dim)}
+
+/* ===== Toast / Modal / Empty ===== */
+.toast{position:fixed;top:20px;left:50%;transform:translateX(-50%);padding:10px 24px;border-radius:8px;font-size:13px;font-weight:500;z-index:999;animation:toastIn .3s ease}
+.toast.success{background:rgba(0,200,150,.9);color:#fff}.toast.error{background:rgba(255,71,87,.9);color:#fff}
+@keyframes toastIn{from{opacity:0;transform:translateX(-50%) translateY(-10px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+.empty{text-align:center;padding:40px 0;color:var(--muted);font-size:14px}
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:20;justify-content:center;align-items:center;padding:20px}
+.modal-overlay.show{display:flex}
+.modal{background:var(--bg2);border:1px solid var(--rule);border-radius:var(--radius);padding:24px;width:100%;max-width:360px}
+.modal h3{font-size:16px;margin-bottom:16px}
+.modal input{width:100%;padding:10px 12px;background:var(--bg3);border:1px solid var(--rule);border-radius:6px;color:var(--ink);font-size:14px;margin-bottom:14px;outline:none}
+.modal input:focus{border-color:var(--accent)}
+.modal-btns{display:flex;gap:10px;justify-content:flex-end}
+.modal-btns button{padding:8px 18px;border-radius:6px;font-size:13px;font-weight:500}
+.modal-btns .btn-cancel{background:var(--bg3);color:var(--muted)}.modal-btns .btn-confirm{background:var(--accent);color:#fff}
+</style>
+</head>
+<body>
+
+<div id="loginPage">
+  <div class="login-box">
+    <h1>IoT 控制系统</h1>
+    <p>登录以管理你的设备</p>
+    <label>用户名</label><input type="text" id="loginUser" autocomplete="username">
+    <label>密码</label><input type="password" id="loginPass" autocomplete="current-password">
+    <button class="btn-primary" onclick="doLogin()">登 录</button>
+    <div class="login-error" id="loginError"></div>
+  </div>
+</div>
+
+<div id="appPage">
+  <header><h1>IoT 控制</h1><button onclick="doLogout()">退出登录</button></header>
+  <main>
+    <div class="tabs">
+      <button class="tab-btn active" onclick="switchTab('devices',this)">设备</button>
+      <button class="tab-btn" onclick="switchTab('keys',this)">Key 管理</button>
+      <button class="tab-btn" onclick="switchTab('settings',this)">设置</button>
+    </div>
+    <div id="tab-devices" class="tab-content active"><div id="deviceList"></div></div>
+    <div id="tab-keys" class="tab-content">
+      <button class="btn-add" onclick="showAddKeyModal()">+ 添加新设备 Key</button>
+      <div id="keyList"></div>
+    </div>
+    <div id="tab-settings" class="tab-content">
+      <div class="settings-section"><h3>更改用户名</h3><label>新用户名</label><input type="text" id="newUsername" placeholder="至少3位，字母数字下划线"><label>当前密码（验证身份）</label><input type="password" id="usernamePwd" placeholder="输入当前密码"><button class="btn-save" onclick="changeUsername()">更改用户名</button></div>
+      <div class="settings-section"><h3>修改密码</h3><label>原密码</label><input type="password" id="oldPwd" placeholder="输入原密码"><label>新密码</label><input type="password" id="newPwd" placeholder="至少6位"><button class="btn-save" onclick="changePassword()">修改密码</button></div>
+    </div>
+  </main>
+</div>
+
+<div class="modal-overlay" id="addKeyModal"><div class="modal"><h3>添加新设备 Key</h3><label>设备备注</label><input type="text" id="newKeyRemark" placeholder="如：客厅灯"><label>设备 ID（选填，如 esp_002）</label><input type="text" id="newKeyDeviceId" placeholder="自定义设备标识"><div class="modal-btns"><button class="btn-cancel" onclick="closeModal('addKeyModal')">取消</button><button class="btn-confirm" onclick="addKey()">生成</button></div></div></div>
+<div class="modal-overlay" id="showKeyModal"><div class="modal"><h3>Key 已生成</h3><p style="font-size:13px;color:var(--muted);margin-bottom:12px">请将此 Key 填入 ESP8266 固件的 config.h 中</p><input type="text" id="generatedKey" readonly style="font-family:monospace;letter-spacing:1px;font-size:16px;text-align:center"><div class="modal-btns"><button class="btn-confirm" onclick="copyKey()">复制 Key</button><button class="btn-cancel" onclick="closeModal('showKeyModal')">关闭</button></div></div></div>
+
+<script>
+const API = 'api.php?route=';
+function token(){return localStorage.getItem('iot_token')||''}
+async function api(route,opts={}){
+  const h={'Content-Type':'application/json'};const t=token();
+  if(t)h['Authorization']='Bearer '+t;
+  const r=await fetch(API+route,{headers:h,...opts});const j=await r.json();
+  if(j.code===401){doLogout();return null}return j;
+}
+function toast(msg,type='success'){const e=document.createElement('div');e.className='toast '+type;e.textContent=msg;document.body.appendChild(e);setTimeout(()=>e.remove(),2500)}
+function escapeHtml(str){if(str==null)return'';const div=document.createElement('div');div.textContent=String(str);return div.innerHTML;}
+function switchTab(n,btn){document.querySelectorAll('.tab-content').forEach(e=>e.classList.remove('active'));document.querySelectorAll('.tab-btn').forEach(e=>e.classList.remove('active'));document.getElementById('tab-'+n).classList.add('active');btn.classList.add('active');if(n==='devices')loadDevices();if(n==='keys')loadKeys()}
+function closeModal(id){document.getElementById(id).classList.remove('show')}
+
+// ===== 登录 =====
+async function doLogin(){
+  const u=document.getElementById('loginUser').value.trim(),p=document.getElementById('loginPass').value;
+  if(!u||!p){document.getElementById('loginError').textContent='请输入用户名和密码';return}
+  const r=await fetch(API+'login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:u,password:p})}).then(r=>r.json());
+  if(r.code===200&&r.data.token){localStorage.setItem('iot_token',r.data.token);document.getElementById('loginPage').style.display='none';document.getElementById('appPage').style.display='flex';loadDevices()}
+  else{document.getElementById('loginError').textContent=r.message||'登录失败'}
+}
+function doLogout(){localStorage.removeItem('iot_token');document.getElementById('loginPage').style.display='flex';document.getElementById('appPage').style.display='none';document.getElementById('loginError').textContent=''}
+
+// ===== 设备列表 =====
+let currentDeviceId = null;
+let statusTimer = null;
+let onlineTimer = null;
+async function loadDevices(){
+  if(statusTimer){clearInterval(statusTimer);statusTimer=null}
+  if(onlineTimer){clearInterval(onlineTimer);onlineTimer=null}
+  const r=await api('devices');const box=document.getElementById('deviceList');
+  if(!r||r.code!==200){box.innerHTML='<div class="empty">加载失败</div>';return}
+  const ds=r.data;if(!ds.length){box.innerHTML='<div class="empty">暂无设备，请先添加 Key</div>';return}
+  box.innerHTML=ds.map(d=>{
+    const did=d.device_id||d.key;
+    let dot='',stxt='';
+    if(d.status==='disabled'){dot='';stxt='已禁用'}
+    else if(d.online==1){dot='<span class="dev-dot on"></span>';stxt='在线'}
+    else{dot='<span class="dev-dot off"></span>';stxt='离线'}
+    const devName=escapeHtml(d.remark)||'未命名设备';
+    return `<div class="device-card">
+      <div class="dev-header"><div><div class="dev-name">${devName}</div><div class="dev-id">${escapeHtml(did)} · ${d.pin_count||0} 个引脚</div></div>
+      <span class="dev-status ${d.status==='disabled'?'disabled':d.online==1?'online':'offline'}">${dot}${stxt}</span></div>
+      <button style="background:var(--bg3);color:var(--muted);font-size:12px;padding:6px 14px;border-radius:6px;cursor:pointer" onclick="openDevice('${escapeHtml(did)}')">管理设备</button>
+    </div>`;
+  }).join('');
+  onlineTimer=setInterval(refreshOnlineStatus,5000);
+}
+async function refreshOnlineStatus(){
+  const r=await api('devices');
+  if(!r||r.code!==200)return;
+  (r.data||[]).forEach(d=>{
+    if(d.status==='disabled')return;
+    const did=d.device_id||d.key;
+    const card=document.querySelector(`.device-card [onclick="openDevice('${did}')"]`);
+    if(!card)return;
+    const badge=card.closest('.device-card').querySelector('.dev-status');
+    if(!badge)return;
+    const isOn=d.online==1;
+    badge.className='dev-status '+(isOn?'online':'offline');
+    badge.innerHTML='<span class="dev-dot '+(isOn?'on':'off')+'"></span>'+(isOn?'在线':'离线');
+  });
+}
+
+// ===== 设备详情 =====
+async function openDevice(did){
+  currentDeviceId=did;
+  if(onlineTimer){clearInterval(onlineTimer);onlineTimer=null}
+  const [devRes,pinsRes,logsRes]=await Promise.all([
+    api('devices'),
+    api('devices/'+encodeURIComponent(did)+'/pins'),
+    api('devices/'+encodeURIComponent(did)+'/logs&limit=5')
+  ]);
+  if(!devRes||!pinsRes) return;
+  const dev=(devRes.data||[]).find(d=>(d.device_id||d.key)===did);
+  if(!dev) return;
+  const pins=pinsRes.data||[];
+  const logs=logsRes?.data||[];
+  const isOnline=dev.online==1;
+  const isDisabled=dev.status==='disabled';
+
+  // 在线状态
+  const onlineClass=isDisabled?'disabled':isOnline?'online':'offline';
+  const onlineText=isDisabled?'已禁用':isOnline?'在线':'离线';
+  const onlineDot=isDisabled?'':isOnline?'<span class="dev-dot on"></span>':'<span class="dev-dot off"></span>';
+
+  // WiFi 数据
+  const latest=logs[0]||{};
+  const rssi=parseInt(latest.wifi_rssi)||0;
+  const rssiClass=rssi>-50?'rssi-good':rssi>-70?'rssi-mid':'rssi-bad';
+
+  let html=`<button class="back-btn" onclick="loadDevices()">← 返回设备列表</button>
+    <div class="device-detail">
+      <div class="dev-header"><div><div class="dev-name">${escapeHtml(dev.remark)||'未命名设备'}</div><div class="dev-id">${escapeHtml(did)}</div></div>
+      <span class="dev-status ${onlineClass}">${onlineDot}${onlineText}</span></div>`;
+
+  // 引脚开关
+  if(pins.length){
+    html+=`<div class="switches">`;
+    pins.forEach(p=>{
+      html+=`<div class="switch-item"><div class="sw-info"><span class="sw-label">${escapeHtml(p.name)}</span><span class="sw-pin">GPIO${p.pin}</span><button class="sw-del" onclick="deletePin('${escapeHtml(did)}',${p.pin})">删除引脚</button></div>
+        <label class="switch"><input type="checkbox" id="pin_${p.pin}" ${p.state?'checked':''} onchange="togglePin('${escapeHtml(did)}',${p.pin},this.checked)"><span class="slider"></span></label></div>`;
+    });
+    html+=`</div>`;
+  }
+
+  // 添加引脚
+  html+=`<div class="pin-config"><h4>添加引脚</h4>
+    <div class="pin-add-row">
+      <input type="text" id="newPinName" placeholder="名称（如客厅灯）">
+      <input type="number" id="newPinNum" placeholder="GPIO号" min="0" max="255" style="max-width:80px">
+      <button class="btn-pin-add" onclick="addPin('${escapeHtml(did)}')">添加</button>
+    </div></div>`;
+
+  // WiFi 信息
+  if(logs.length>0){
+    html+=`<div class="detail-wifi">
+      <div class="wifi-item"><div class="wifi-label">WiFi</div><div class="wifi-val">${escapeHtml(latest.wifi_ssid)||'unknown'}</div></div>
+      <div class="wifi-item"><div class="wifi-label">信号强度</div><div class="wifi-val ${rssiClass}">${rssi} dBm</div></div>
+      <div class="wifi-item"><div class="wifi-label">IP 地址</div><div class="wifi-val">${escapeHtml(latest.ip)||'-'}</div></div>
+      <div class="wifi-item"><div class="wifi-label">最后上报</div><div class="wifi-val" style="font-size:12px">${escapeHtml(latest.created_at)||'-'}</div></div>
+    </div>`;
+  }else{
+    html+=`<div style="color:var(--muted);font-size:13px;margin-top:12px">暂无设备上报数据</div>`;
+  }
+
+  // WiFi 日志
+  if(logs.length){
+    html+=`<div class="log-section"><h4>WiFi 信号记录（最近 ${logs.length} 条）</h4>
+      <div style="overflow-x:auto"><table class="log-table"><tr><th>时间</th><th>WiFi</th><th>信号</th><th>IP</th></tr>`;
+    logs.forEach(l=>{
+      const r2=parseInt(l.wifi_rssi)||0;
+      const rc2=r2>-50?'rssi-good':r2>-70?'rssi-mid':'rssi-bad';
+      html+=`<tr><td>${escapeHtml(l.created_at)}</td><td>${escapeHtml(l.wifi_ssid)}</td><td class="${rc2}">${l.wifi_rssi} dBm</td><td>${escapeHtml(l.ip)}</td></tr>`;
+    });
+    html+=`</table></div></div>`;
+  }
+
+  html+=`</div>`;
+  document.getElementById('deviceList').innerHTML=html;
+  if(statusTimer){clearInterval(statusTimer)}
+  statusTimer=setInterval(refreshPinStates,5000);
+}
+
+async function refreshPinStates(){
+  if(!currentDeviceId)return;
+  const r=await api('devices/'+encodeURIComponent(currentDeviceId)+'/pins');
+  if(!r||r.code!==200)return;
+  (r.data||[]).forEach(p=>{const el=document.getElementById('pin_'+p.pin);if(el)el.checked=p.state==1});
+}
+
+async function togglePin(did,pin,on){
+  const r=await api('devices/'+encodeURIComponent(did)+'/control',{method:'POST',body:JSON.stringify({pin,state:on?1:0})});
+  if(r&&r.code===200){toast(r.data.name+' '+(on?'已开启':'已关闭'));openDevice(did)}
+  else{toast(r?r.message:'操作失败','error');openDevice(did)}
+}
+
+async function addPin(did){
+  const name=document.getElementById('newPinName').value.trim();
+  const pin=parseInt(document.getElementById('newPinNum').value);
+  if(!name){toast('请输入引脚名称','error');return}
+  if(isNaN(pin)||pin<0||pin>255){toast('引脚号无效(0-255)','error');return}
+  const r=await api('devices/'+encodeURIComponent(did)+'/pins',{method:'POST',body:JSON.stringify({pin,name,sort_order:0})});
+  if(r&&r.code===201){toast('引脚已添加');openDevice(did)}
+  else{toast(r?r.message:'添加失败','error')}
+}
+
+async function deletePin(did,pin){
+  if(!confirm('确定删除此引脚？'))return;
+  const r=await api('devices/'+encodeURIComponent(did)+'/pins/'+pin,{method:'DELETE'});
+  if(r&&r.code===200){toast('引脚已删除');openDevice(did)}
+  else{toast(r?r.message:'删除失败','error')}
+}
+
+// ===== Key 管理 =====
+async function loadKeys(){
+  const r=await api('keys');const box=document.getElementById('keyList');
+  if(!r||r.code!==200){box.innerHTML='<div class="empty">加载失败</div>';return}
+  const ks=r.data;if(!ks.length){box.innerHTML='<div class="empty">暂无 Key</div>';return}
+  box.innerHTML=ks.map(k=>{
+    const a=k.status==='active';
+    const kRemark=escapeHtml(k.remark)||'无备注';
+    const kDevId=k.device_id?escapeHtml(k.device_id):'';
+    return `<div class="key-card"><div><div class="key-val">${escapeHtml(k.key)}</div><div class="key-remark">${kRemark}${kDevId?' · '+kDevId:''}</div></div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span class="key-status ${k.status}">${a?'有效':'禁用'}</span><div class="key-actions">
+    <button class="btn-sm ${a?'toggle-off':'toggle-on'}" onclick="toggleKeyStatus('${escapeHtml(k.key)}',${!a})">${a?'禁用':'启用'}</button>
+    <button class="btn-sm btn-del" onclick="deleteKey('${escapeHtml(k.key)}')">删除</button></div></div></div>`;
+  }).join('');
+}
+function showAddKeyModal(){document.getElementById('newKeyRemark').value='';document.getElementById('newKeyDeviceId').value='';document.getElementById('addKeyModal').classList.add('show')}
+async function addKey(){
+  const remark=document.getElementById('newKeyRemark').value.trim(),deviceId=document.getElementById('newKeyDeviceId').value.trim()||null;
+  const r=await api('keys',{method:'POST',body:JSON.stringify({remark,device_id:deviceId})});closeModal('addKeyModal');
+  if(r&&r.code===201){document.getElementById('generatedKey').value=r.data.key;document.getElementById('showKeyModal').classList.add('show');loadKeys()}
+  else{toast(r?r.message:'生成失败','error')}
+}
+function copyKey(){const i=document.getElementById('generatedKey');i.select();navigator.clipboard.writeText(i.value).then(()=>toast('已复制到剪贴板'))}
+async function toggleKeyStatus(k,en){const r=await api('keys/'+k+'/'+(en?'enable':'disable'),{method:'PUT'});if(r&&r.code===200){toast(en?'Key 已启用':'Key 已禁用');loadKeys()}else{toast(r?r.message:'操作失败','error')}}
+async function deleteKey(k){if(!confirm('确定删除此 Key？'))return;const r=await api('keys/'+k,{method:'DELETE'});if(r&&r.code===200){toast('Key 已删除');loadKeys()}else{toast(r?r.message:'删除失败','error')}}
+
+// ===== 设置 =====
+async function changeUsername(){const n=document.getElementById('newUsername').value.trim(),p=document.getElementById('usernamePwd').value;if(!n||!p){toast('请填写完整','error');return}if(n.length<3){toast('用户名至少3位','error');return}const r=await api('user/username',{method:'POST',body:JSON.stringify({new_username:n,password:p})});if(r&&r.code===200){toast('用户名已修改为: '+n);document.getElementById('newUsername').value='';document.getElementById('usernamePwd').value=''}else{toast(r?r.message:'修改失败','error')}}
+async function changePassword(){const o=document.getElementById('oldPwd').value,n=document.getElementById('newPwd').value;if(!o||!n){toast('请填写完整','error');return}if(n.length<6){toast('新密码至少6位','error');return}const r=await api('user/password',{method:'POST',body:JSON.stringify({old_password:o,new_password:n})});if(r&&r.code===200){toast('密码已修改');document.getElementById('oldPwd').value='';document.getElementById('newPwd').value=''}else{toast(r?r.message:'修改失败','error')}}
+
+document.getElementById('loginPass').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin()});
+document.getElementById('loginUser').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('loginPass').focus()});
+if(token()){document.getElementById('loginPage').style.display='none';document.getElementById('appPage').style.display='flex';loadDevices()}
+</script>
+</body>
+</html>
