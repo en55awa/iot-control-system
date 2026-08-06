@@ -1,11 +1,13 @@
 <?php
 /**
- * 物联网控制系统 - API 路由入口 v3.30（多用户隔离 + 预设 + 组合开关 + OTA）
+ * 物联网控制系统 - API 路由入口 v3.31（多用户隔离 + 预设 + 组合开关 + OTA + Token销毁）
  *
  * 接口列表：
  *   GET  poll&device_id=xxx&key=xxx&wifi=xxx&rssi=xxx&ip=xxx   ESP8266 轮询+上报（公开）
  *   GET  ota/firmware/{id}.bin                                   固件文件下载（公开，带 key 验证）
+ *   POST ota/report                                              ESP8266 回报 OTA 更新结果（公开，带 key 验证）
  *   POST login                                                  登录
+ *   POST logout                                                 退出登录（使旧 token 失效）
  *   POST register                                               注册用户（仅管理员）
  *   GET  devices                                                设备列表（权限隔离）
  *   GET  devices/{id}/pins                                      设备引脚配置
@@ -45,7 +47,7 @@
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/jwt.php';
 
-$allowedOrigin = getenv('CORS_ORIGIN') ?: 'YOUR_DOMAIN_HERE'; // 替换为你的域名，如 http://example.com
+$allowedOrigin = getenv('CORS_ORIGIN') ?: 'YOUR_DOMAIN_HERE';
 header('Access-Control-Allow-Origin: ' . $allowedOrigin);
 header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, Authorization');
@@ -77,7 +79,7 @@ try {
 
     // ===== 公开接口 =====
     if ($method === 'GET' && ($parts[0] ?? '') === 'version') {
-        jsonResponse(200, 'ok', ['version' => 'v3.30']);
+        jsonResponse(200, 'ok', ['version' => 'v3.31']);
         exit;
     }
     if ($method === 'GET' && ($parts[0] ?? '') === 'poll') {
@@ -93,14 +95,19 @@ try {
         handleLogin($db, $body);
         exit;
     }
+    // 公开：ESP8266 报告 OTA 更新结果（通过 key 验证，无需 JWT）
+    if ($method === 'POST' && ($parts[0] ?? '') === 'ota' && ($parts[1] ?? '') === 'report') {
+        handleOTAReport($db);
+        exit;
+    }
 
     // ===== JWT 认证 =====
     $user = JWT::fromHeader();
     if ($user === null) {
         jsonError(401, '未授权，请登录');
     }
-    // 检查用户状态 + 密码因子（密码变更后旧 token 自动失效）
-    $stmt = $db->prepare('SELECT status, role, password_hash FROM users WHERE id = ?');
+    // 检查用户状态 + 密码因子 + token 版本
+    $stmt = $db->prepare('SELECT status, role, password_hash, token_version FROM users WHERE id = ?');
     $stmt->execute([$user['uid']]);
     $currentUser = $stmt->fetch();
     if (!$currentUser || $currentUser['status'] !== 'active') {
@@ -110,6 +117,11 @@ try {
     $expectedPf = substr($currentUser['password_hash'], 0, 8);
     if (($user['pf'] ?? '') !== $expectedPf) {
         jsonError(401, '密码已变更，请重新登录');
+    }
+    // 校验 token 版本：退出登录后旧 token 立即失效
+    $expectedTv = (int)$currentUser['token_version'];
+    if (($user['tv'] ?? 0) !== $expectedTv) {
+        jsonError(401, '登录已失效，请重新登录');
     }
     $user['role'] = $currentUser['role'];
     $user['status'] = $currentUser['status'];
@@ -123,6 +135,7 @@ try {
         case 'user':    handleUser($db, $method, $parts, $body, $user); break;
         case 'admin':   handleAdmin($db, $method, $parts, $body, $user); break;
         case 'register': handleRegister($db, $body, $user); break;
+        case 'logout':  handleLogout($db, $user); break;
         default:        jsonError(404, '接口不存在');
     }
 
@@ -247,6 +260,11 @@ function handlePoll(PDO $db): void
     }
 
     // ---- 检查是否有待更新的OTA固件 ----
+    // 先清理超时的 updating 记录：超过5分钟未收到设备回报，判定为掉线/失败
+    $stmt = $db->prepare("UPDATE ota_firmware SET status = 'failed', error = '更新超时：设备未在5分钟内回报结果' WHERE device_id = ? AND status = 'updating' AND updated_at < DATE_SUB(NOW(), INTERVAL 5 MINUTE)");
+    $stmt->execute([$deviceId]);
+
+    // 查询 pending 状态的固件（只有主动上传且尚未下发的才会触发更新）
     $stmt = $db->prepare('SELECT id, filename, md5, file_size, version FROM ota_firmware WHERE device_id = ? AND status = ? ORDER BY id DESC LIMIT 1');
     $stmt->execute([$deviceId, 'pending']);
     $ota = $stmt->fetch();
@@ -282,7 +300,7 @@ function handleLogin(PDO $db, array $body): void
         jsonError(429, '登录尝试过于频繁，请 5 分钟后再试');
     }
 
-    $stmt = $db->prepare('SELECT id, username, password_hash, role, status FROM users WHERE username = ?');
+    $stmt = $db->prepare('SELECT id, username, password_hash, role, status, token_version FROM users WHERE username = ?');
     $stmt->execute([$username]);
     $user = $stmt->fetch();
 
@@ -301,12 +319,15 @@ function handleLogin(PDO $db, array $body): void
     $stmt->execute([$clientIp]);
 
     // Token 不过期（10 年有效期），pf 为密码哈希因子用于密码变更后自动失效旧 token
+    // tv 为 token 版本号，退出登录后递增使旧 token 失效
     $pf = substr($user['password_hash'], 0, 8);
+    $tv = (int)($user['token_version'] ?? 0);
     $token = JWT::encode([
         'uid' => $user['id'],
         'username' => $user['username'],
         'role' => $user['role'],
-        'pf' => $pf
+        'pf' => $pf,
+        'tv' => $tv
     ], 10 * 365 * 86400);
 
     jsonResponse(200, '登录成功', [
@@ -317,6 +338,16 @@ function handleLogin(PDO $db, array $body): void
             'role' => $user['role']
         ]
     ]);
+}
+
+// =====================================================
+//  退出登录（递增 token_version，使旧 token 失效）
+// =====================================================
+function handleLogout(PDO $db, array $user): void
+{
+    $stmt = $db->prepare('UPDATE users SET token_version = token_version + 1 WHERE id = ?');
+    $stmt->execute([$user['uid']]);
+    jsonResponse(200, '已退出登录');
 }
 
 // =====================================================
@@ -1221,6 +1252,23 @@ function handleOTAFirmwareDownload(PDO $db): void
         exit;
     }
 
+    // 安全校验：请求方的 Key 必须属于该固件目标设备
+    // 防止其他设备或未授权用户下载别人的固件
+    $stmt = $db->prepare('SELECT id FROM device_keys WHERE `key` = ? AND device_id = ? AND status = "active"');
+    $stmt->execute([strtoupper(trim($key)), $firmware['device_id']]);
+    if (!$stmt->fetch()) {
+        http_response_code(403);
+        echo 'Forbidden: key does not match target device';
+        exit;
+    }
+
+    // 只允许下载 pending 或 updating 状态的固件，防止重复下载已完成/失败的记录
+    if (!in_array($firmware['status'], ['pending', 'updating'], true)) {
+        http_response_code(410);
+        echo 'Gone: firmware status is ' . $firmware['status'];
+        exit;
+    }
+
     $filePath = __DIR__ . '/firmware/' . $firmware['filename'];
     if (!file_exists($filePath)) {
         http_response_code(404);
@@ -1380,4 +1428,57 @@ function handleOTA(PDO $db, string $method, array $parts, array $body, array $us
     }
 
     jsonError(404, 'OTA接口不存在');
+}
+
+// =====================================================
+//  ESP8266 回报 OTA 更新结果（公开接口，Key 验证）
+//  POST ota/report  body: ota_id, success(0/1), device_id, key, error
+// =====================================================
+function handleOTAReport(PDO $db): void
+{
+    require_once __DIR__ . '/key_manager.php';
+
+    // 兼容 JSON body 与 form-data 两种提交方式
+    $raw = json_decode(file_get_contents('php://input'), true) ?: [];
+    $key = $raw['key'] ?? $_POST['key'] ?? '';
+    if (!verifyKey($key)) {
+        jsonError(403, '无效的 Key');
+    }
+
+    $otaId = (int)($raw['ota_id'] ?? $_POST['ota_id'] ?? 0);
+    $success = (int)($raw['success'] ?? $_POST['success'] ?? -1);
+    $error = trim($raw['error'] ?? $_POST['error'] ?? '');
+    $deviceId = trim($raw['device_id'] ?? $_POST['device_id'] ?? '');
+
+    if ($otaId <= 0) {
+        jsonError(400, '缺少 ota_id');
+    }
+    if (!in_array($success, [0, 1], true)) {
+        jsonError(400, 'success 参数无效（0 或 1）');
+    }
+
+    $stmt = $db->prepare('SELECT device_id, status FROM ota_firmware WHERE id = ?');
+    $stmt->execute([$otaId]);
+    $fw = $stmt->fetch();
+    if (!$fw) {
+        jsonError(404, '固件记录不存在');
+    }
+    // 校验设备归属，防止伪造
+    if ($deviceId !== '' && $fw['device_id'] !== $deviceId) {
+        jsonError(403, '设备不匹配');
+    }
+    // 校验 Key 必须属于该设备，防止用其他设备的 Key 伪造回报
+    if ($deviceId !== '') {
+        $stmt = $db->prepare('SELECT id FROM device_keys WHERE `key` = ? AND device_id = ? AND status = "active"');
+        $stmt->execute([strtoupper(trim($key)), $deviceId]);
+        if (!$stmt->fetch()) {
+            jsonError(403, 'Key 与设备不匹配');
+        }
+    }
+
+    $newStatus = $success ? 'done' : 'failed';
+    $stmt = $db->prepare("UPDATE ota_firmware SET status = ?, error = ?, updated_at = NOW() WHERE id = ?");
+    $stmt->execute([$newStatus, $error, $otaId]);
+
+    jsonResponse(200, $success ? '更新成功' : '更新失败已记录');
 }

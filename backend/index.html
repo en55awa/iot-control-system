@@ -354,7 +354,7 @@ main{flex:1;padding:20px;max-width:600px;margin:0 auto;width:100%;padding-bottom
       <div class="user-info">
         <span id="headerUsername"></span>
         <span class="role-badge" id="headerRole"></span>
-        <span style="font-size:10px;color:var(--muted);margin-left:4px">前端v3.30 | 后端<span id="backendVer">...</span></span>
+        <span style="font-size:10px;color:var(--muted);margin-left:4px">前端v3.31 | 后端<span id="backendVer">...</span></span>
       </div>
       <button onclick="logout()">退出</button>
     </div>
@@ -436,7 +436,7 @@ async function doLogin(){
   try{const r=await fetch('api.php?route=login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:u,password:p})}).then(x=>x.json());if(r.code===200){token=r.data.token;currentUser=r.data.user;localStorage.setItem('iot_token',token);localStorage.setItem('iot_user',JSON.stringify(currentUser));showApp();}else{document.getElementById('loginError').textContent=r.message||'登录失败';}}catch(e){document.getElementById('loginError').textContent='网络请求失败，请检查网络';}
 }
 
-function logout(){token='';currentUser=null;accountDisabled=false;localStorage.removeItem('iot_token');localStorage.removeItem('iot_user');if(onlineTimer){clearInterval(onlineTimer);onlineTimer=null;}if(statusTimer){clearInterval(statusTimer);statusTimer=null;}const b=document.getElementById('disabledBanner');if(b)b.style.display='none';const a=document.getElementById('appPage');if(a){a.style.paddingTop='';a.style.display='none';}document.getElementById('loginPage').style.display='flex';}
+function logout(){if(token){fetch('api.php?route=logout',{method:'POST',headers:{'Authorization':'Bearer '+token}}).catch(()=>{});}token='';currentUser=null;accountDisabled=false;localStorage.removeItem('iot_token');localStorage.removeItem('iot_user');if(onlineTimer){clearInterval(onlineTimer);onlineTimer=null;}if(statusTimer){clearInterval(statusTimer);statusTimer=null;}const b=document.getElementById('disabledBanner');if(b)b.style.display='none';const a=document.getElementById('appPage');if(a){a.style.paddingTop='';a.style.display='none';}document.getElementById('loginPage').style.display='flex';}
 
 function showApp(){
   if(!currentUser||!currentUser.id){const s=JSON.parse(localStorage.getItem('iot_user')||'{}');if(s.id)currentUser=s;else{logout();return;}}

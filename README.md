@@ -1,4 +1,4 @@
-# IoT 控制系统 v3.30
+# IoT 控制系统 v3.31
 
 ESP8266 + PHP + MySQL HTTP Polling 架构的物联网控制平台。
 
@@ -18,7 +18,7 @@ ESP8266 + PHP + MySQL HTTP Polling 架构的物联网控制平台。
 | `backend/index.html` | Web 控制面板（单页应用） |
 | `backend/.htaccess` | 保护敏感文件不被 HTTP 直接访问 |
 | `backend/upgrade_db_v3.php` | 数据库迁移脚本（v2.10 → v3.20，创建预设/组合开关表） |
-| `backend/upgrade_db_ota.php` | 数据库迁移脚本（v3.20+ → v3.30，创建 OTA 表和 firmware 目录） |
+| `backend/upgrade_db_ota.php` | 数据库迁移脚本（v3.20+ → v3.31，创建 OTA 表、firmware 目录、token_version 字段） |
 | `backend/tool/resetadmin.php` | 管理员密码重置工具（使用后自动删除） |
 | `firmware/iot_firmware/config.h` | **【需配置】ESP8266 配置** |
 | `firmware/iot_firmware/iot_firmware.ino` | ESP8266 固件源码（含 OTA 支持） |
@@ -107,17 +107,19 @@ define('RESET_KEY', 'passwd');
 | `device_switch_combos` | 组合开关表 |
 | `device_switch_combo_pins` | 组合开关联动引脚表 |
 
-**适用场景**：从 v2.10 升级到 v3.30 时，需要先执行此脚本。
+**适用场景**：从 v2.10 升级到 v3.31 时，需要先执行此脚本。
 
 > 脚本使用 `CREATE TABLE IF NOT EXISTS`，已存在的表会自动跳过，可安全重复执行。执行后自动删除。
 
-### `upgrade_db_ota.php` — v3.20+ → v3.30 迁移
+### `upgrade_db_ota.php` — v3.20+ → v3.31 迁移
 
 - 创建 `ota_firmware` 表（记录 OTA 固件更新状态：pending/updating/done/failed）
 - 创建 `firmware/` 目录用于存储固件文件
 - 在 `firmware/` 目录放置 `.htaccess` 禁止直接 HTTP 访问
+- 添加 `ota_firmware.error` 字段记录更新失败原因（v3.31+）
+- 添加 `users.token_version` 字段用于 JWT 退出销毁（v3.31+）
 
-**适用场景**：从 v3.20/v3.22 升级到 v3.30 时执行。
+**适用场景**：从 v3.20/v3.22 升级到 v3.31 时执行。
 
 > 脚本使用幂等操作（`CREATE TABLE IF NOT EXISTS`、目录存在检查），可安全重复执行。执行后自动删除。
 
@@ -174,29 +176,29 @@ FLUSH PRIVILEGES;
 
 ### 从旧版本升级
 
-#### v1.01 → v3.30
+#### v1.01 → v3.31
 
 1. 备份现有数据库和文件
-2. 上传 v3.30 的所有文件（覆盖）
+2. 上传 v3.31 的所有文件（覆盖）
 3. 依次执行数据库迁移：
    - 浏览器访问 `http://你的域名/upgrade_db_v3.php`（创建预设/组合开关表）
    - 浏览器访问 `http://你的域名/upgrade_db_ota.php`（创建 OTA 表和 firmware 目录）
 4. 两个脚本执行成功后均会自动删除
 5. 通过串口重新刷入带 OTA 支持的固件
 
-#### v2.10 → v3.30
+#### v2.10 → v3.31
 
 1. 备份现有数据库和文件
-2. 上传 v3.30 的所有文件（覆盖）
+2. 上传 v3.31 的所有文件（覆盖）
 3. 依次执行：
    - `http://你的域名/upgrade_db_v3.php`（如已执行过可跳过）
    - `http://你的域名/upgrade_db_ota.php`
 4. 通过串口重新刷入带 OTA 支持的固件
 
-#### v3.20 / v3.22 → v3.30
+#### v3.20 / v3.22 → v3.31
 
 1. 备份现有数据库和文件
-2. 上传 v3.30 的所有文件（覆盖）
+2. 上传 v3.31 的所有文件（覆盖）
 3. 浏览器访问 `http://你的域名/upgrade_db_ota.php`
 4. 脚本会自动创建 `ota_firmware` 表和 `firmware/` 目录
 5. 执行成功后脚本自动删除
@@ -214,8 +216,10 @@ FLUSH PRIVILEGES;
 |------|------|------|
 | GET | `poll?device_id=xxx&key=xxx&wifi=xxx&rssi=xxx&ip=xxx` | ESP8266 轮询+上报 |
 | POST | `login` | 登录 |
+| POST | `logout` | 退出登录（v3.31+，使旧 token 失效） |
 | GET | `version` | 获取版本号 |
-| GET | `ota/firmware?device_id=xxx&key=xxx` | 固件下载（Key 认证，v3.30+） |
+| GET | `ota/firmware/{id}.bin?key=xxx` | 固件下载（Key 认证，v3.30+） |
+| POST | `ota/report` | ESP8266 回报 OTA 结果（Key 认证，v3.31+） |
 
 ### 认证接口（需 JWT Token）
 
@@ -230,9 +234,9 @@ FLUSH PRIVILEGES;
 | POST | `devices/{id}/share` | 共享设备 |
 | DELETE | `devices/{id}/share/{userId}` | 取消共享 |
 | GET | `devices/{id}/shares` | 共享列表 |
-| POST | `devices/{id}/ota/upload` | 上传 OTA 固件（v3.30+） |
-| GET | `devices/{id}/ota/status` | 查看 OTA 更新状态（v3.30+） |
-| DELETE | `devices/{id}/ota/cancel` | 取消待更新固件（v3.30+） |
+| POST | `ota/upload` | 上传 OTA 固件（v3.30+） |
+| GET | `ota/status?device_id=xxx` | 查看 OTA 更新状态（v3.30+） |
+| DELETE | `ota/{id}` | 取消待更新固件（v3.30+） |
 | GET | `combos?device_id=xxx` | 预设列表 |
 | POST | `combos` | 创建预设 |
 | POST | `combos/{id}/execute` | 执行预设 |
@@ -329,6 +333,7 @@ http://你的域名/tool/resetadmin.php?key=你的RESET_KEY
 - 密码 bcrypt 哈希存储
 - JWT 签名防篡改（`hash_equals` 时序安全比较）
 - Token 与密码绑定（密码变更后旧 Token 自动失效）
+- JWT 退出销毁（退出登录后旧 Token 立即失效，v3.31+）
 - 设备 Key 格式校验（16位 hex）
 - 登录失败速率限制（5分钟5次锁定）
 - 错误信息不泄露给客户端（写入服务器日志）

@@ -19,6 +19,33 @@
 
 ## 更新历史
 
+### v3.31
+- **类型**：小更新 (+0.01)
+- **内容**：安全修复 - JWT 退出登录销毁
+  - 新增 `POST logout` 接口，退出登录时递增 `token_version`
+  - JWT payload 新增 `tv`（token version）字段
+  - 每次请求校验 token 中的 `tv` 与数据库 `token_version` 是否一致
+  - 退出登录后旧 token 立即失效，无法继续使用
+  - 前端 `logout()` 改为先调用服务端退出接口再清除本地状态
+  - 数据库 `users` 表新增 `token_version` 字段（INT, 默认0）
+  - **BUG 修复**：登录 SQL 查询遗漏 `token_version` 字段，导致退出后无法重新登录（token 中 tv 始终为 0，与递增后的数据库值不匹配）
+  - **OTA 状态管理修复**：修复更新失败后状态卡死、无法重试的问题
+    - `handlePoll` 新增超时清理：`updating` 状态超过 5 分钟自动转为 `failed`，避免状态卡死
+    - 新增 `POST ota/report` 公开接口（Key 验证），接收 ESP8266 回报的更新结果（成功→done / 失败→failed）
+    - ESP8266 更新成功/失败均向服务器回报状态，失败时附带错误信息
+    - `ota_firmware` 表新增 `error` 字段记录失败原因
+    - OTA 状态查询接口返回 `error` 字段供前端展示
+  - **OTA 下载鉴权加固**：修复固件下载接口未校验设备归属的漏洞
+    - 下载固件时校验请求方 Key 必须属于该固件的目标设备（防止其他设备下载别人的固件）
+    - 限制只有 `pending`/`updating` 状态的固件才能下载，防止重复下载已完成/失败的固件
+    - OTA 回报接口同样校验 Key 必须属于该设备，防止伪造回报
+- **涉及文件**：`api.php`、`index.html`、`upgrade_db_ota.php`、`iot_firmware.ino`
+- **部署说明**：
+  1. 重新访问 `upgrade_db_ota.php` 执行数据库迁移（添加 `token_version` 和 `ota_firmware.error` 字段）
+  2. 上传更新后的 `api.php` 和 `index.html`
+  3. 重新编译并烧录 `iot_firmware.ino` 到 ESP8266（支持状态回报）
+  4. 已登录用户的旧 token 会因 `tv` 字段缺失而失效，需重新登录
+
 ### v3.30
 - **类型**：大更新 (+1.00)
 - **内容**：新增 OTA 固件更新功能
@@ -100,7 +127,7 @@
 - **类型**：小更新 (+0.01)
 - **内容**：安全审计修复
   - JWT 密钥从环境变量读取，不再硬编码
-  - CORS 限制为实际域名
+  - CORS 限制为指定域名
   - 错误信息脱敏，不暴露数据库结构
   - 登录失败 5 次后锁定 5 分钟
   - 敏感文件 `.htaccess` 保护
