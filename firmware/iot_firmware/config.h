@@ -12,7 +12,7 @@
 #define POLL_INTERVAL 5000                 // 轮询间隔 毫秒（5秒=5000，可调2000-10000）
 
 // ============== 设备认证 Key（8字节）=============
-#define DEVICE_KEY    "FADD8F2B7FFD1CCB"   // 16字符hex，由后端生成
+#define DEVICE_KEY    "YOUR_DEVICE_KEY_HERE"   // 16字符hex，由后端生成
 
 // ============== 设备信息 ==============
 #define DEVICE_ID     "esp001"

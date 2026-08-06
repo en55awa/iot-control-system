@@ -8,10 +8,10 @@
 
 // JWT 签名密钥（至少 32 字节随机字符串）
 if (!defined('JWT_SECRET')) {
-    define('JWT_SECRET', 'Q=M~Xe^Y$OTi&6(j_oS]LHy3OO0iFWYI^4zIY#kfMCP2w}1}5S');
+    define('JWT_SECRET', 'YOUR_JWT_SECRET_HERE_AT_LEAST_32_CHARS_LONG');
 }
 
 // CLI Key 管理密码
 if (!defined('CLI_PASSWORD')) {
-    define('CLI_PASSWORD', 'Q=M~Xe^Y$OTi&6(j_oS]LHy3OO0iFWYI^4zIY#kfMCP2w}1}5S');
+    define('CLI_PASSWORD', 'YOUR_CLI_PASSWORD_HERE');
 }
