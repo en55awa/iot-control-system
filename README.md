@@ -15,9 +15,11 @@ ESP8266 + PHP + MySQL HTTP Polling 架构的物联网控制平台。
 | [`v1.01`](../../tree/v1.01) | v1.01 | 单用户、安全审计修复 | 入门体验、单设备控制 |
 | [`v2.10`](../../tree/v2.10) | v2.10 | 多用户隔离、设备共享、管理员系统 | 多人协作、多设备管理 |
 | [`v3.20`](../../tree/v3.20) | v3.20 | 组合开关、预设功能、日/夜主题 | 批量控制、场景联动 |
-| [`v3.22`](../../tree/v3.22) | v3.22 | Token 与密码绑定安全修复 | **推荐部署版本** |
+| [`v3.22`](../../tree/v3.22) | v3.22 | Token 与密码绑定安全修复 | 安全加固版 |
+| [`v3.30`](../../tree/v3.30) | v3.30 | OTA 固件更新、Web 端远程刷机 | 远程固件维护 |
+| [`v3.31`](../../tree/v3.31) | v3.31 | JWT 退出登录销毁、Token 版本校验 | **推荐部署版本** |
 
-> **建议新用户直接使用 `v3.22` 分支。**
+> **建议新用户直接使用 `v3.31` 分支。**
 
 ### 如何获取某个版本
 
@@ -25,10 +27,10 @@ ESP8266 + PHP + MySQL HTTP Polling 架构的物联网控制平台。
 # 克隆仓库后切换到对应分支
 git clone https://github.com/en55awa/iot-control-system.git
 cd iot-control-system
-git checkout v3.22
+git checkout v3.31
 
 # 或只下载某个分支
-git clone -b v3.22 https://github.com/en55awa/iot-control-system.git
+git clone -b v3.31 https://github.com/en55awa/iot-control-system.git
 ```
 
 ---
@@ -66,9 +68,11 @@ git clone -b v3.22 https://github.com/en55awa/iot-control-system.git
 | v1.01 | 单用户、安全审计修复 | 入门体验、单设备控制 |
 | v2.10 | 多用户隔离、设备共享、管理员系统 | 多人协作、多设备管理 |
 | v3.20 | 组合开关、预设功能 | 批量控制、场景联动 |
-| v3.22 | Token 与密码绑定安全修复 | **推荐部署版本** |
+| v3.22 | Token 与密码绑定安全修复 | 安全加固版 |
+| v3.30 | OTA 固件更新、Web 端远程刷机 | 远程固件维护 |
+| v3.31 | JWT 退出登录销毁、Token 版本校验 | **推荐部署版本** |
 
-> **建议新用户直接使用 v3.22。** 如需从旧版升级，请阅读下方「版本升级路径」章节。
+> **建议新用户直接使用 v3.31。** 如需从旧版升级，请阅读下方「版本升级路径」章节。
 
 ---
 
@@ -169,7 +173,7 @@ define('RESET_KEY', '你的随机密钥');
 
 ## 部署步骤（全新安装）
 
-以 **v3.22** 为例，其他版本步骤相同。
+以 **v3.31** 为例，其他版本步骤相同。
 
 ### 第一步：创建数据库
 
@@ -325,10 +329,20 @@ secrets.php
 index.html
 .htaccess
 upgrade_db_v3.php（如有）
+upgrade_db_ota.php（v3.30+）
 tool/resetadmin.php（如有）
 ```
 
-### 第五步：登录并配置
+### 第五步：执行数据库迁移（v3.30+）
+
+浏览器访问 `http://你的域名/upgrade_db_ota.php`，脚本会自动：
+- 创建 `ota_firmware` 表（OTA 固件管理）
+- 创建 `firmware/` 目录并设置 `.htaccess` 保护
+- 添加 `users.token_version` 字段（JWT 退出销毁，v3.31+）
+
+执行成功后脚本自动删除，如未删除请手动删除。
+
+### 第六步：登录并配置
 
 1. 访问 `http://你的域名/`
 2. 默认账号：`en55` / `888888`
@@ -336,7 +350,7 @@ tool/resetadmin.php（如有）
 4. 在 Key 管理中生成新设备 Key
 5. 将生成的 Key 填入 `config.h`
 
-### 第六步：编译并烧录固件
+### 第七步：编译并烧录固件
 
 1. 用 Arduino IDE 打开 `firmware/iot_firmware/iot_firmware.ino`
 2. 修改 `config.h` 中的 WiFi、服务器、Key 配置
@@ -367,6 +381,26 @@ tool/resetadmin.php（如有）
 ### v3.20 → v3.22
 
 直接覆盖文件即可，无需数据库迁移（仅 `api.php` 变更）。
+
+### v3.22 → v3.30
+
+1. 备份现有数据库和文件
+2. 上传 v3.30 的所有文件（覆盖）
+3. 浏览器访问 `http://你的域名/upgrade_db_ota.php`
+4. 脚本会自动创建 `ota_firmware` 表和 `firmware/` 目录
+5. 执行成功后脚本自动删除，如未删除请手动删除
+6. 需通过串口重新刷入带 OTA 支持的固件（`iot_firmware.ino` 已更新）
+7. **固件导出注意**：Arduino IDE 中 "工具 → Flash Size" 设置必须与实际烧录时一致
+
+### v3.30 → v3.31
+
+1. 备份现有数据库和文件
+2. 上传 v3.31 的所有文件（覆盖）
+3. 重新访问 `http://你的域名/upgrade_db_ota.php`（脚本已更新，会添加 `users.token_version` 字段）
+4. 执行成功后脚本自动删除
+5. 已登录用户的旧 token 会因 `tv` 字段缺失而失效，需重新登录
+
+> **跨版本升级**：从 v3.22 直接升级到 v3.31 也是安全的。`upgrade_db_ota.php` 使用幂等操作（`CREATE TABLE IF NOT EXISTS`、`try/catch` 处理 `ALTER TABLE`），会一次性完成所有数据库迁移。
 
 ---
 
@@ -408,7 +442,9 @@ tool/resetadmin.php（如有）
 |------|------|------|
 | GET | `poll?device_id=xxx&key=xxx&wifi=xxx&rssi=xxx&ip=xxx` | ESP8266 轮询+上报 |
 | POST | `login` | 登录 |
+| POST | `logout` | 退出登录，使旧 Token 失效（v3.31+） |
 | GET | `version` | 获取版本号（v2.10+） |
+| GET | `ota/firmware?device_id=xxx&key=xxx` | 固件下载（Key 认证，v3.30+） |
 
 ### 认证接口（需 JWT Token）
 
@@ -431,6 +467,9 @@ tool/resetadmin.php（如有）
 | POST | `switch-combos` | 创建组合开关（v3.2+） |
 | POST | `switch-combos/{id}/toggle` | 切换组合开关（v3.2+） |
 | DELETE | `switch-combos/{id}` | 删除组合开关（v3.2+） |
+| POST | `devices/{id}/ota/upload` | 上传 OTA 固件（v3.30+） |
+| GET | `devices/{id}/ota/status` | 查看 OTA 更新状态（v3.30+） |
+| DELETE | `devices/{id}/ota/cancel` | 取消待更新固件（v3.30+） |
 | GET | `keys` | Key 列表 |
 | POST | `keys` | 生成新 Key |
 | DELETE | `keys/{key}` | 删除 Key |
@@ -489,6 +528,7 @@ http://你的域名/tool/resetadmin.php?key=你的RESET_KEY
 - 密码 bcrypt 哈希存储
 - JWT 签名防篡改（`hash_equals` 时序安全比较）
 - Token 与密码绑定（v3.22+，密码变更后旧 Token 自动失效）
+- JWT 退出登录销毁（v3.31+，退出后旧 Token 立即失效）
 - 设备 Key 格式校验（16位 hex）
 - 登录失败速率限制（5分钟5次锁定）
 - 错误信息不泄露给客户端（写入服务器日志）
