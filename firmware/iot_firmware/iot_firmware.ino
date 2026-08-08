@@ -1,6 +1,6 @@
 /**
- * 物联网控制系统 - ESP8266 固件（动态引脚 + WiFi 上报 + OTA 更新）
- * v3.33: OTA 状态由服务端自动追踪，固件无需回报
+ * 物联网控制系统 - ESP8266 固件（动态引脚 + WiFi 上报 + OTA 更新 + 服务端指令）
+ * v4.35: 新增服务端指令解析（CMD:reboot 定时重启），开关隐藏，自定义指令（定时开关/延时关闭/定时重启）
  * 
  * 工作原理：
  *   1. 连接 WiFi
@@ -10,6 +10,7 @@
  *   5. 同时上报 WiFi 名称、信号强度、IP
  *   6. 若轮询响应中包含 OTA:url，则自动下载并更新固件
  *   7. OTA 更新成功后直接重启，服务端通过轮询间隙自动检测更新结果
+ *   8. 若轮询响应中包含 CMD:reboot，则按服务端指令执行重启（定时重启功能）
  * 
  * 响应格式（纯文本，逗号分隔）：
  *   pin1:state1,pin2:state2,...,OTA:http://xxx/firmware.bin&key=xxx&md5=xxx
@@ -145,6 +146,29 @@ void checkAndDoOTA(String body) {
   }
 }
 
+// ============== 检查并执行服务端指令 ==============
+void checkAndDoCommand(String body) {
+  // 查找 CMD: 标记
+  int cmdIdx = body.indexOf("CMD:");
+  if (cmdIdx == -1) return;
+
+  String cmd = body.substring(cmdIdx + 4);
+  // 截取到逗号或行尾
+  int commaIdx = cmd.indexOf(',');
+  if (commaIdx > 0) {
+    cmd = cmd.substring(0, commaIdx);
+  }
+  cmd.trim();
+
+  if (cmd == "reboot") {
+    Serial.println("[CMD] 收到重启指令，500ms 后重启...");
+    delay(500);
+    ESP.restart();
+  } else {
+    Serial.printf("[CMD] 未知指令: %s\n", cmd.c_str());
+  }
+}
+
 // ============== HTTP 轮询 + WiFi 上报 ==============
 void doPoll() {
   if (WiFi.status() != WL_CONNECTED) {
@@ -178,6 +202,8 @@ void doPoll() {
   if (code == 200) {
     String body = httpClient.getString();
     applyPinStates(body);
+    // 检查是否有服务端指令（如定时重启）
+    checkAndDoCommand(body);
     // 检查是否有 OTA 更新
     checkAndDoOTA(body);
   } else if (code > 0) {
@@ -208,7 +234,7 @@ String urlencode(const char* str) {
 // ============== 入口 ==============
 void setup() {
   Serial.begin(SERIAL_BAUD);
-  Serial.println("\n====== IoT Boot (Dynamic Pins + OTA v3.33) ======");
+  Serial.println("\n====== IoT Boot (Dynamic Pins + OTA + CMD v4.35) ======");
   Serial.printf("[ID] %s  [KEY] %.8s...\n", DEVICE_ID, DEVICE_KEY);
   setupWiFi();
 }

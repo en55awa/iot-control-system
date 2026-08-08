@@ -27,6 +27,37 @@ EEEEEEEE  N    N  5555555  5555555
 
 ## 更新历史
 
+### v4.35
+- **类型**：大更新 (+1.00) — 新增板块：开关隐藏 + 自定义指令系统
+- **内容**：两个新功能 + 包含 v3.34/v3.35 的修复
+  - **功能一：开关隐藏**
+    - 场景：创建了组合开关后，组成的子开关仍在列表中显示，界面冗余
+    - 每个引脚旁新增"隐藏"按钮，隐藏后不在主列表显示
+    - 底部新增"显示隐藏的开关 (N)"可展开折叠区域，支持恢复显示
+    - 隐藏的开关仍可被组合开关控制，仅影响 Web 端显示
+    - 数据库：`device_pins` 新增 `hidden` 字段 (TINYINT 0/1)
+    - API：`PUT devices/{id}/pins/{pin}/hide` 和 `PUT devices/{id}/pins/{pin}/show`
+  - **功能二：自定义指令系统（服务端全权解析）**
+    - 三种指令类型：
+      - **定时开关**（timer）：在指定时间打开/关闭某个开关或组合开关，支持单次/每天重复
+      - **延时关闭**（delay_off）：开关打开后 N 秒自动关闭，持续生效
+      - **定时重启**（reboot）：在指定时间重启设备，支持单次/每天重复
+    - 服务端在 ESP8266 每次轮询时自动检查并执行到期指令：
+      - timer 类型到期 → 更新 `device_status`，下次轮询单片机自动获取新状态
+      - delay_off 类型 → 检查开关是否已打开且超过延时时间，是则自动关闭
+      - reboot 类型到期 → 在轮询响应中添加 `CMD:reboot`，单片机收到后执行 `ESP.restart()`
+    - 数据库：新建 `device_schedules` 表，`device_status.updated_at` 确保为 ON UPDATE CURRENT_TIMESTAMP
+    - API：`GET/POST/DELETE schedules`，`PUT schedules/{id}/toggle`（暂停/恢复）
+    - 前端：OTA 板块下方新增"自定义指令"区域，含创建表单 + 指令列表 + 暂停/删除
+    - 固件：新增 `checkAndDoCommand()` 解析 `CMD:reboot` 指令
+  - **包含 v3.34 修复**：PHP 进程超时保护（`set_time_limit`/`ignore_user_abort`/`connect_timeout`）
+  - **包含 v3.35 修复**：OTA 记录删除按钮 + 管理设备按钮配色
+- **涉及文件**：`api.php`、`config.php`、`index.html`、`iot_firmware.ino`、`upgrade_db_v435.php`（新增）
+- **部署说明**：
+  1. 上传 `upgrade_db_v435.php` 到服务器并访问一次执行数据库迁移（自动删除）
+  2. 上传 `config.php`、`api.php`、`index.html`
+  3. 重新编译并烧录 `iot_firmware.ino` 到 ESP8266（新增 CMD 指令解析，必须更新）
+
 ### v3.35
 - **类型**：小更新 (+0.01)
 - **内容**：UI 优化 - OTA 记录删除按钮 + 管理设备按钮配色
