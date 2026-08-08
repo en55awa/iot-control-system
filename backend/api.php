@@ -1,11 +1,11 @@
 <?php
 /**
- * 物联网控制系统 - API 路由入口 v3.31（多用户隔离 + 预设 + 组合开关 + OTA + Token销毁）
+ * 物联网控制系统 - API 路由入口 v3.35（多用户隔离 + 预设 + 组合开关 + OTA服务端状态追踪 + Token销毁）
  *
  * 接口列表：
- *   GET  poll&device_id=xxx&key=xxx&wifi=xxx&rssi=xxx&ip=xxx   ESP8266 轮询+上报（公开）
+ *   GET  poll&device_id=xxx&key=xxx&wifi=xxx&rssi=xxx&ip=xxx                  ESP8266 轮询+上报（公开，OTA状态由服务端自动追踪）
  *   GET  ota/firmware/{id}.bin                                   固件文件下载（公开，带 key 验证）
- *   POST ota/report                                              ESP8266 回报 OTA 更新结果（公开，带 key 验证）
+ *   POST ota/report                                              （旧版兼容）ESP8266 回报 OTA 结果，新版固件已改为 poll 中携带
  *   POST login                                                  登录
  *   POST logout                                                 退出登录（使旧 token 失效）
  *   POST register                                               注册用户（仅管理员）
@@ -28,7 +28,7 @@
  *   DELETE switch-combos/{id}                                   删除组合开关
  *   POST ota/upload                                             上传固件（FormData）
  *   GET  ota/status?device_id=xxx                               查询设备OTA状态
- *   DELETE ota/{id}                                              取消待更新的固件
+ *   DELETE ota/{id}                                              删除固件记录
  *   GET  keys                                                   Key 列表
  *   POST keys                                                   生成新 Key
  *   DELETE keys/{key}                                           删除 Key
@@ -65,21 +65,9 @@ $body = json_decode(file_get_contents('php://input'), true) ?: [];
 try {
     $db = getDB();
 
-    // 向后兼容：确保 login_attempts 表存在
-    try {
-        $db->exec("CREATE TABLE IF NOT EXISTS login_attempts (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            ip VARCHAR(45) NOT NULL,
-            username VARCHAR(50) DEFAULT '',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            KEY idx_ip_time (ip, created_at)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-    } catch (PDOException $e) {
-    }
-
     // ===== 公开接口 =====
     if ($method === 'GET' && ($parts[0] ?? '') === 'version') {
-        jsonResponse(200, 'ok', ['version' => 'v3.31']);
+        jsonResponse(200, 'ok', ['version' => 'v3.35']);
         exit;
     }
     if ($method === 'GET' && ($parts[0] ?? '') === 'poll') {
@@ -95,7 +83,7 @@ try {
         handleLogin($db, $body);
         exit;
     }
-    // 公开：ESP8266 报告 OTA 更新结果（通过 key 验证，无需 JWT）
+    // 公开：ESP8266 报告 OTA 更新结果（旧版兼容，v3.33 起由服务端自动追踪，无需设备回报）
     if ($method === 'POST' && ($parts[0] ?? '') === 'ota' && ($parts[1] ?? '') === 'report') {
         handleOTAReport($db);
         exit;
@@ -219,9 +207,30 @@ function handlePoll(PDO $db): void
         exit;
     }
 
-    // ---- 更新设备最后在线时间 ----
-    $stmt = $db->prepare('UPDATE device_keys SET last_seen = NOW() WHERE device_id = ?');
+    // ---- 读取设备 OTA 状态（在更新 last_seen 之前读取）----
+    $stmt = $db->prepare('SELECT ota_status, ota_sent_at FROM device_keys WHERE device_id = ?');
     $stmt->execute([$deviceId]);
+    $devRow = $stmt->fetch();
+
+    $otaStatus = $devRow ? (int)$devRow['ota_status'] : 0;
+    $otaSentAt = $devRow ? $devRow['ota_sent_at'] : null;
+
+    // ---- 服务端 OTA 状态自动追踪 ----
+    // 原理：OTA 期间 ESPhttpUpdate.update() 是阻塞调用，设备不会轮询
+    // 如果在"更新中"(2)状态下收到该设备的轮询请求，说明设备已完成 OTA 并重启恢复在线
+    // 直接重置为正常状态(0)，同时标记固件记录为已完成
+    if ($otaStatus === 2) {
+        // 设备在更新中状态下发起了轮询 → OTA 完成，恢复正常
+        $stmt = $db->prepare('UPDATE device_keys SET ota_status = 0, last_seen = NOW() WHERE device_id = ?');
+        $stmt->execute([$deviceId]);
+        $stmt = $db->prepare("UPDATE ota_firmware SET status = 'done', updated_at = NOW() WHERE device_id = ? AND status = 'updating'");
+        $stmt->execute([$deviceId]);
+        $otaStatus = 0;
+    } else {
+        // 正常状态（0/1/3/4），更新在线时间
+        $stmt = $db->prepare('UPDATE device_keys SET last_seen = NOW() WHERE device_id = ?');
+        $stmt->execute([$deviceId]);
+    }
 
     // ---- 记录 WiFi 日志（每30秒记录一次）----
     $wifiSsid = $_GET['wifi'] ?? '';
@@ -259,20 +268,49 @@ function handlePoll(PDO $db): void
         $result[] = (int)$row['pin'] . ':' . (int)$row['state'];
     }
 
-    // ---- 检查是否有待更新的OTA固件 ----
-    // 先清理超时的 updating 记录：超过5分钟未收到设备回报，判定为掉线/失败
-    $stmt = $db->prepare("UPDATE ota_firmware SET status = 'failed', error = '更新超时：设备未在5分钟内回报结果' WHERE device_id = ? AND status = 'updating' AND updated_at < DATE_SUB(NOW(), INTERVAL 5 MINUTE)");
+    // ---- 兼容旧版固件的 OTA 回报参数（v3.33 起由服务端自动追踪，不再需要设备回报）----
+    $reportOtaId = (int)($_GET['ota_id'] ?? 0);
+    if ($reportOtaId > 0 && $otaStatus === 2) {
+        $reportSuccess = (int)($_GET['ota_success'] ?? -1);
+        $reportError = trim($_GET['ota_error'] ?? '');
+        if (in_array($reportSuccess, [0, 1], true)) {
+            $stmt = $db->prepare('SELECT device_id, status FROM ota_firmware WHERE id = ?');
+            $stmt->execute([$reportOtaId]);
+            $fwReport = $stmt->fetch();
+            if ($fwReport && $fwReport['device_id'] === $deviceId && $fwReport['status'] === 'updating') {
+                $newStatus = $reportSuccess ? 'done' : 'failed';
+                $stmt = $db->prepare("UPDATE ota_firmware SET status = ?, error = ?, updated_at = NOW() WHERE id = ?");
+                $stmt->execute([$newStatus, $reportError, $reportOtaId]);
+                // 同步更新 device_keys.ota_status
+                $otaStatusNum = $reportSuccess ? 3 : 4;
+                $stmt = $db->prepare('UPDATE device_keys SET ota_status = ? WHERE device_id = ?');
+                $stmt->execute([$otaStatusNum, $deviceId]);
+                $otaStatus = $otaStatusNum;
+            }
+        }
+    }
+
+    // ---- 检查是否有待更新的 OTA 固件 ----
+    // 超时兜底清理：updating 超过 5 分钟 → failed（防止设备掉线后状态卡死）
+    $stmt = $db->prepare("UPDATE ota_firmware SET status = 'failed', error = '更新超时' WHERE device_id = ? AND status = 'updating' AND updated_at < DATE_SUB(NOW(), INTERVAL 5 MINUTE)");
+    $stmt->execute([$deviceId]);
+    $stmt = $db->prepare('UPDATE device_keys SET ota_status = 4 WHERE device_id = ? AND ota_status = 2 AND ota_sent_at < DATE_SUB(NOW(), INTERVAL 5 MINUTE)');
     $stmt->execute([$deviceId]);
 
-    // 查询 pending 状态的固件（只有主动上传且尚未下发的才会触发更新）
-    $stmt = $db->prepare('SELECT id, filename, md5, file_size, version FROM ota_firmware WHERE device_id = ? AND status = ? ORDER BY id DESC LIMIT 1');
-    $stmt->execute([$deviceId, 'pending']);
-    $ota = $stmt->fetch();
-    if ($ota) {
-        // 标记为正在更新
-        $stmt2 = $db->prepare('UPDATE ota_firmware SET status = ? WHERE id = ?');
-        $stmt2->execute(['updating', $ota['id']]);
-        $result[] = 'OTA:http://' . $_SERVER['HTTP_HOST'] . dirname($_SERVER['SCRIPT_NAME']) . '/api.php?route=ota/firmware/' . $ota['id'] . '.bin' . '&key=' . $key . '&md5=' . $ota['md5'];
+    // 只有 ota_status <= 1（正常/待更新）时才下发新固件
+    if ($otaStatus <= 1) {
+        $stmt = $db->prepare('SELECT id, filename, md5, file_size, version FROM ota_firmware WHERE device_id = ? AND status = ? ORDER BY id DESC LIMIT 1');
+        $stmt->execute([$deviceId, 'pending']);
+        $ota = $stmt->fetch();
+        if ($ota) {
+            // 标记固件为正在更新
+            $stmt2 = $db->prepare('UPDATE ota_firmware SET status = ? WHERE id = ?');
+            $stmt2->execute(['updating', $ota['id']]);
+            // 设置设备 OTA 状态为更新中，记录下发时间
+            $stmt3 = $db->prepare('UPDATE device_keys SET ota_status = 2, ota_sent_at = NOW() WHERE device_id = ?');
+            $stmt3->execute([$deviceId]);
+            $result[] = 'OTA:http://' . $_SERVER['HTTP_HOST'] . dirname($_SERVER['SCRIPT_NAME']) . '/api.php?route=ota/firmware/' . $ota['id'] . '.bin' . '&key=' . $key . '&md5=' . $ota['md5'];
+        }
     }
 
     header('Content-Type: text/plain');
@@ -398,7 +436,7 @@ function handleDevices(PDO $db, string $method, array $parts, array $body, array
                 SELECT dk.id, dk.device_id, dk.`key`, dk.remark, dk.status, dk.last_seen, dk.created_at, dk.user_id,
                        u.username as owner_name,
                        (SELECT COUNT(*) FROM device_pins WHERE device_id = dk.device_id) AS pin_count,
-                       IF(dk.last_seen IS NULL, 0, IF(dk.last_seen > DATE_SUB(NOW(), INTERVAL 10 SECOND), 1, 0)) AS online
+                       IF(dk.last_seen IS NULL, 0, IF(dk.last_seen > DATE_SUB(NOW(), INTERVAL 15 SECOND), 1, 0)) AS online
                 FROM device_keys dk
                 LEFT JOIN users u ON u.id = dk.user_id
                 ORDER BY dk.id DESC
@@ -409,7 +447,7 @@ function handleDevices(PDO $db, string $method, array $parts, array $body, array
                 SELECT dk.id, dk.device_id, dk.`key`, dk.remark, dk.status, dk.last_seen, dk.created_at, dk.user_id,
                        u.username as owner_name,
                        (SELECT COUNT(*) FROM device_pins WHERE device_id = dk.device_id) AS pin_count,
-                       IF(dk.last_seen IS NULL, 0, IF(dk.last_seen > DATE_SUB(NOW(), INTERVAL 10 SECOND), 1, 0)) AS online,
+                       IF(dk.last_seen IS NULL, 0, IF(dk.last_seen > DATE_SUB(NOW(), INTERVAL 15 SECOND), 1, 0)) AS online,
                        0 AS is_shared
                 FROM device_keys dk
                 LEFT JOIN users u ON u.id = dk.user_id
@@ -418,7 +456,7 @@ function handleDevices(PDO $db, string $method, array $parts, array $body, array
                 SELECT dk.id, dk.device_id, dk.`key`, dk.remark, dk.status, dk.last_seen, dk.created_at, dk.user_id,
                        u.username as owner_name,
                        (SELECT COUNT(*) FROM device_pins WHERE device_id = dk.device_id) AS pin_count,
-                       IF(dk.last_seen IS NULL, 0, IF(dk.last_seen > DATE_SUB(NOW(), INTERVAL 10 SECOND), 1, 0)) AS online,
+                       IF(dk.last_seen IS NULL, 0, IF(dk.last_seen > DATE_SUB(NOW(), INTERVAL 15 SECOND), 1, 0)) AS online,
                        1 AS is_shared
                 FROM device_keys dk
                 JOIN device_shares s ON s.device_id = dk.device_id
@@ -1277,10 +1315,16 @@ function handleOTAFirmwareDownload(PDO $db): void
     }
 
     // 返回固件文件
+    // 放宽时间限制：ESP8266 下载固件可能需要较长时间（1MB 文件在慢网络下可能需要 30 秒）
+    set_time_limit(60);
     header('Content-Type: application/octet-stream');
     header('Content-Disposition: attachment; filename="' . $firmware['filename'] . '"');
     header('Content-Length: ' . filesize($filePath));
     header('X-MD5: ' . $firmware['md5']);
+    // 清空输出缓冲，防止内存堆积
+    while (ob_get_level() > 0) {
+        ob_end_flush();
+    }
     readfile($filePath);
     exit;
 }
@@ -1295,6 +1339,8 @@ function handleOTA(PDO $db, string $method, array $parts, array $body, array $us
 {
     // POST /ota/upload - 上传固件
     if ($method === 'POST' && ($parts[1] ?? '') === 'upload' && count($parts) === 2) {
+        // 放宽时间限制：文件上传可能需要较长时间
+        set_time_limit(30);
         if (empty($_FILES['firmware'])) {
             jsonError(400, '请选择固件文件');
         }
@@ -1359,6 +1405,10 @@ function handleOTA(PDO $db, string $method, array $parts, array $body, array $us
         $stmt->execute([$deviceId, $safeFilename, $version, $fileSize, $md5, 'pending', $user['uid']]);
         $otaId = (int)$db->lastInsertId();
 
+        // 设置设备 OTA 状态为待更新（状态 1）
+        $stmt = $db->prepare('UPDATE device_keys SET ota_status = 1 WHERE device_id = ?');
+        $stmt->execute([$deviceId]);
+
         jsonResponse(201, '固件已上传，设备将在下次轮询时自动更新', [
             'id' => $otaId,
             'device_id' => $deviceId,
@@ -1379,7 +1429,19 @@ function handleOTA(PDO $db, string $method, array $parts, array $body, array $us
             jsonError(403, '无权访问此设备');
         }
 
-        $stmt = $db->prepare('SELECT id, device_id, version, filename, file_size, md5, status, created_at, updated_at FROM ota_firmware WHERE device_id = ? ORDER BY id DESC LIMIT 5');
+        // 超时兜底：查询时也检查 OTA 超时（防止设备掉线后前端看不到失败状态）
+        $stmt = $db->prepare("UPDATE ota_firmware SET status = 'failed', error = '更新超时' WHERE device_id = ? AND status = 'updating' AND updated_at < DATE_SUB(NOW(), INTERVAL 5 MINUTE)");
+        $stmt->execute([$deviceId]);
+        $stmt = $db->prepare('UPDATE device_keys SET ota_status = 4 WHERE device_id = ? AND ota_status = 2 AND ota_sent_at < DATE_SUB(NOW(), INTERVAL 5 MINUTE)');
+        $stmt->execute([$deviceId]);
+
+        // 读取设备当前 OTA 状态（0=正常 1=待更新 2=更新中 3=已更新 4=失败）
+        $stmt = $db->prepare('SELECT ota_status FROM device_keys WHERE device_id = ?');
+        $stmt->execute([$deviceId]);
+        $devRow = $stmt->fetch();
+        $otaStatus = $devRow ? (int)$devRow['ota_status'] : 0;
+
+        $stmt = $db->prepare('SELECT id, device_id, version, filename, file_size, md5, status, error, created_at, updated_at FROM ota_firmware WHERE device_id = ? ORDER BY id DESC LIMIT 5');
         $stmt->execute([$deviceId]);
         $records = $stmt->fetchAll();
 
@@ -1391,10 +1453,10 @@ function handleOTA(PDO $db, string $method, array $parts, array $body, array $us
         }
         unset($r);
 
-        jsonResponse(200, 'ok', $records);
+        jsonResponse(200, 'ok', ['ota_status' => $otaStatus, 'records' => $records]);
     }
 
-    // DELETE /ota/{id} - 取消待更新的固件
+    // DELETE /ota/{id} - 删除固件记录（pending/failed/done 均可删除，updating 不允许）
     if ($method === 'DELETE' && count($parts) === 2) {
         $otaId = (int)$parts[1];
 
@@ -1410,9 +1472,9 @@ function handleOTA(PDO $db, string $method, array $parts, array $body, array $us
             jsonError(403, '只能删除自己上传的固件');
         }
 
-        // 只能删除 pending 或 failed 状态的
-        if (!in_array($firmware['status'], ['pending', 'failed'], true)) {
-            jsonError(400, '只能取消待更新或失败的固件任务');
+        // 不允许删除 updating 状态的记录（设备正在更新中）
+        if ($firmware['status'] === 'updating') {
+            jsonError(400, '设备正在更新中，无法删除');
         }
 
         // 删除文件
@@ -1423,6 +1485,12 @@ function handleOTA(PDO $db, string $method, array $parts, array $body, array $us
 
         $stmt = $db->prepare('DELETE FROM ota_firmware WHERE id = ?');
         $stmt->execute([$otaId]);
+
+        // pending/failed 状态删除时重置 ota_status（done 状态删除不影响，因为 ota_status 已为 0）
+        if (in_array($firmware['status'], ['pending', 'failed'], true)) {
+            $stmt = $db->prepare('UPDATE device_keys SET ota_status = 0 WHERE device_id = ?');
+            $stmt->execute([$firmware['device_id']]);
+        }
 
         jsonResponse(200, '固件已取消');
     }
@@ -1479,6 +1547,13 @@ function handleOTAReport(PDO $db): void
     $newStatus = $success ? 'done' : 'failed';
     $stmt = $db->prepare("UPDATE ota_firmware SET status = ?, error = ?, updated_at = NOW() WHERE id = ?");
     $stmt->execute([$newStatus, $error, $otaId]);
+
+    // 同步更新 device_keys.ota_status（v3.33 兼容旧版固件回报）
+    if ($deviceId !== '') {
+        $otaStatusNum = $success ? 3 : 4;
+        $stmt = $db->prepare('UPDATE device_keys SET ota_status = ? WHERE device_id = ?');
+        $stmt->execute([$otaStatusNum, $deviceId]);
+    }
 
     jsonResponse(200, $success ? '更新成功' : '更新失败已记录');
 }

@@ -283,6 +283,9 @@ main{flex:1;padding:20px;max-width:600px;margin:0 auto;width:100%;padding-bottom
 .ota-badge.failed{background:rgba(255,71,87,.15);color:var(--danger)}
 .btn-ota-cancel{padding:4px 10px;background:transparent;border:1px solid var(--danger);color:var(--danger);border-radius:4px;font-size:11px;margin-left:8px}
 .btn-ota-cancel:hover{background:rgba(255,71,87,.1)}
+/* ===== 设备列表按钮 ===== */
+.btn-manage{font-size:12px;padding:6px 14px;border-radius:6px;background:var(--accent);color:#fff;border:none;cursor:pointer;font-weight:600;transition:all .2s}
+.btn-manage:hover{background:var(--accent-dim);transform:translateY(-1px)}
 </style>
 </head>
 <body>
@@ -354,7 +357,7 @@ main{flex:1;padding:20px;max-width:600px;margin:0 auto;width:100%;padding-bottom
       <div class="user-info">
         <span id="headerUsername"></span>
         <span class="role-badge" id="headerRole"></span>
-        <span style="font-size:10px;color:var(--muted);margin-left:4px">前端v3.31 | 后端<span id="backendVer">...</span></span>
+        <span style="font-size:10px;color:var(--muted);margin-left:4px">前端v3.35 | 后端<span id="backendVer">...</span></span>
       </div>
       <button onclick="logout()">退出</button>
     </div>
@@ -453,7 +456,7 @@ function renderTabs(){const t=document.querySelectorAll('.tab-btn');const n=['�
 function switchTab(idx,tid){document.querySelectorAll('.tab-content').forEach(e=>e.classList.remove('active'));document.querySelectorAll('.tab-btn').forEach(e=>e.classList.remove('active'));document.getElementById(tid).classList.add('active');document.querySelectorAll('.tab-btn')[idx].classList.add('active');if(tid==='tabDevices')loadDevices();if(tid==='tabKeys')loadKeys();if(tid==='tabUsers')loadUsers();}
 
 // ===== 设备列表 =====
-async function loadDevices(){try{const r=await api('devices');const list=document.getElementById('deviceList');if(!r.data||r.data.length===0){list.innerHTML='<div class="empty">暂无设备，请先在 Key 管理中生成 Key</div>';return;}list.innerHTML='';r.data.forEach(d=>{const o=d.online==1,dis=d.status==='disabled',sh=d.is_shared==1;const dot=dis?'':o?'<span class="dev-dot on"></span>':'<span class="dev-dot off"></span>';const st=dis?'已禁用':o?'在线':'离线';const nm=escapeHtml(d.remark)||'未命名设备';const ow=d.owner_name&&currentUser.role==='admin'?'<span style="font-size:11px;color:var(--muted)">所有者: '+escapeHtml(d.owner_name)+'</span>':'';list.innerHTML+=`<div class="device-card"><div class="dev-header"><div><div class="dev-name">${nm}${sh?'<span class="shared-tag">已共享</span>':''}</div><div class="dev-id">${escapeHtml(d.device_id)} · ${d.pin_count||0} 个引脚</div>${ow}</div><span class="dev-status ${dis?'disabled':o?'online':'offline'}">${dot}${st}</span></div><div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap"><button style="background:var(--bg3);color:var(--muted);font-size:12px;padding:6px 14px;border-radius:6px" onclick="openDevice('${escapeHtml(d.device_id)}')">管理设备</button>${(currentUser.role==='admin'||d.user_id==currentUser.id)?`<button style="background:var(--bg3);color:#3498db;font-size:12px;padding:6px 14px;border-radius:6px" onclick="openShare('${escapeHtml(d.device_id)}')">共享设备</button>`:''}</div></div>`;});}catch(e){console.error(e);}}
+async function loadDevices(){try{const r=await api('devices');const list=document.getElementById('deviceList');if(!r.data||r.data.length===0){list.innerHTML='<div class="empty">暂无设备，请先在 Key 管理中生成 Key</div>';return;}list.innerHTML='';r.data.forEach(d=>{const o=d.online==1,dis=d.status==='disabled',sh=d.is_shared==1;const dot=dis?'':o?'<span class="dev-dot on"></span>':'<span class="dev-dot off"></span>';const st=dis?'已禁用':o?'在线':'离线';const nm=escapeHtml(d.remark)||'未命名设备';const ow=d.owner_name&&currentUser.role==='admin'?'<span style="font-size:11px;color:var(--muted)">所有者: '+escapeHtml(d.owner_name)+'</span>':'';list.innerHTML+=`<div class="device-card"><div class="dev-header"><div><div class="dev-name">${nm}${sh?'<span class="shared-tag">已共享</span>':''}</div><div class="dev-id">${escapeHtml(d.device_id)} · ${d.pin_count||0} 个引脚</div>${ow}</div><span class="dev-status ${dis?'disabled':o?'online':'offline'}">${dot}${st}</span></div><div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap"><button class="btn-manage" onclick="openDevice('${escapeHtml(d.device_id)}')">管理设备</button>${(currentUser.role==='admin'||d.user_id==currentUser.id)?`<button style="background:var(--bg3);color:#3498db;font-size:12px;padding:6px 14px;border-radius:6px" onclick="openShare('${escapeHtml(d.device_id)}')">共享设备</button>`:''}</div></div>`;});}catch(e){console.error(e);}}
 
 // ===== 设备详情 =====
 async function openDevice(did){
@@ -515,9 +518,22 @@ async function loadOTAStatus(did){
     const r=await api('ota/status',{params:{device_id:did}});
     const el=document.getElementById('otaStatusList');
     if(!el)return;
-    if(!r.data||r.data.length===0){el.innerHTML='<div style="color:var(--muted);font-size:12px">暂无更新记录</div>';return;}
-    const statusMap={pending:'等待更新',updating:'更新中',done:'已完成',failed:'更新失败'};
-    el.innerHTML=r.data.map(o=>`<div class="ota-record"><div class="ota-info"><span class="ota-ver">${escapeHtml(o.version)||'v?-??'}</span><span class="ota-size">${escapeHtml(o.file_size_text)}</span><span class="ota-time">${escapeHtml(o.created_at)}</span></div><span class="ota-badge ${o.status}">${statusMap[o.status]||o.status}</span>${(o.status==='pending'||o.status==='failed')?`<button class="btn-ota-cancel" onclick="cancelOTA(${o.id},'${escapeHtml(did)}')">取消</button>`:''}</div>`).join('');
+    const otaStatus=r.data?(r.data.ota_status||0):0;
+    const records=r.data?(r.data.records||[]):[];
+    // 设备 OTA 状态横幅（0=正常不显示，1-4 对应不同状态）
+    const otaStatusText={1:'\u27a4 待更新',2:'\u21bb 更新中...',3:'\u2714 已更新',4:'\u2716 更新失败'};
+    const otaStatusCls={1:'pending',2:'updating',3:'done',4:'failed'};
+    let html='';
+    if(otaStatus>0){
+      html+=`<div class="ota-record" style="justify-content:center;background:var(--bg2);font-size:13px"><span class="ota-badge ${otaStatusCls[otaStatus]||''}" style="font-size:12px;padding:4px 12px">${otaStatusText[otaStatus]||''}</span></div>`;
+    }
+    if(!records||records.length===0){
+      html+='<div style="color:var(--muted);font-size:12px">暂无更新记录</div>';
+    }else{
+      const fwStatusMap={pending:'等待更新',updating:'更新中',done:'已完成',failed:'更新失败'};
+      html+=records.map(o=>`<div class="ota-record"><div class="ota-info"><span class="ota-ver">${escapeHtml(o.version)||'v?-??'}</span><span class="ota-size">${escapeHtml(o.file_size_text)}</span><span class="ota-time">${escapeHtml(o.created_at)}</span></div><span class="ota-badge ${o.status}">${fwStatusMap[o.status]||o.status}</span>${o.status!=='updating'?`<button class="btn-ota-cancel" onclick="deleteOTA(${o.id},'${escapeHtml(did)}')">删除</button>`:''}</div>`).join('');
+    }
+    el.innerHTML=html;
   }catch(e){}
 }
 
@@ -570,12 +586,12 @@ async function uploadOTA(did){
   }catch(e){btn.disabled=false;toast('上传失败','error');progressDiv.style.display='none';}
 }
 
-async function cancelOTA(otaId,did){
-  if(!confirm('确认取消此固件更新？'))return;
-  try{const r=await api('ota/'+otaId,{method:'DELETE'});if(r.code===200){toast('已取消');loadOTAStatus(did);}else toast(r.message,'error');}catch(e){toast('操作失败','error');}
+async function deleteOTA(otaId,did){
+  if(!confirm('确认删除此固件记录？'))return;
+  try{const r=await api('ota/'+otaId,{method:'DELETE'});if(r.code===200){toast('已删除');loadOTAStatus(did);}else toast(r.message,'error');}catch(e){toast('操作失败','error');}
 }
 
-// 同步刷新：普通引脚 + 组合开关
+// 同步刷新：普通引脚 + 组合开关 + OTA状态
 async function refreshPinStates(){
   if(!currentDeviceId)return;
   try{
@@ -583,6 +599,8 @@ async function refreshPinStates(){
     if(pr.data)pr.data.forEach(p=>{const cb=document.getElementById('pin_'+p.pin);if(cb)cb.checked=p.state==1;});
     if(scr.data)scr.data.forEach(sc=>{const cb=document.getElementById('sc_'+sc.id);if(cb)cb.checked=!!sc.all_on;});
   }catch(e){}
+  // 同步刷新 OTA 状态（让"待更新/更新中/已完成"实时变化）
+  loadOTAStatus(currentDeviceId);
 }
 
 async function togglePin(did,pin,state){try{const r=await api('devices/'+encodeURIComponent(did)+'/control',{method:'POST',body:{pin,state:state?1:0}});if(r.code===200)toast('已设为 '+r.data.state_name);else toast(r.message,'error');}catch(e){toast('操作失败','error');}}

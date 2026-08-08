@@ -1,5 +1,6 @@
 /**
  * 物联网控制系统 - ESP8266 固件（动态引脚 + WiFi 上报 + OTA 更新）
+ * v3.33: OTA 状态由服务端自动追踪，固件无需回报
  * 
  * 工作原理：
  *   1. 连接 WiFi
@@ -8,6 +9,7 @@
  *   4. 根据返回状态设置对应引脚
  *   5. 同时上报 WiFi 名称、信号强度、IP
  *   6. 若轮询响应中包含 OTA:url，则自动下载并更新固件
+ *   7. OTA 更新成功后直接重启，服务端通过轮询间隙自动检测更新结果
  * 
  * 响应格式（纯文本，逗号分隔）：
  *   pin1:state1,pin2:state2,...,OTA:http://xxx/firmware.bin&key=xxx&md5=xxx
@@ -33,10 +35,13 @@ bool otaInProgress = false;
 void setupWiFi() {
   Serial.printf("[WiFi] 连接 %s", WIFI_SSID);
   WiFi.mode(WIFI_STA);
+  WiFi.persistent(false);           // 不写 Flash，避免磨损
+  WiFi.setSleepMode(WIFI_NONE_SLEEP); // 关闭省电模式，防止间歇性断连
+  WiFi.setAutoReconnect(true);      // WiFi 断开后自动重连（后台进行，不阻塞）
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
   int t = 0;
-  while (WiFi.status() != WL_CONNECTED && t < 40) {
+  while (WiFi.status() != WL_CONNECTED && t < 20) {  // 最多等 10 秒（原 20 秒太长）
     delay(500);
     Serial.print(".");
     t++;
@@ -45,7 +50,7 @@ void setupWiFi() {
   if (WiFi.status() == WL_CONNECTED) {
     Serial.printf(" OK IP:%s RSSI:%d\n", WiFi.localIP().toString().c_str(), WiFi.RSSI());
   } else {
-    Serial.println("\n[WiFi] 失败,5s后重试");
+    Serial.println("\n[WiFi] 首次连接失败，自动重连已开启，将继续尝试...");
   }
 }
 
@@ -120,16 +125,20 @@ void checkAndDoOTA(String body) {
   t_httpUpdate_return ret = ESPhttpUpdate.update(updateClient, otaUrl);
 
   switch (ret) {
-    case HTTP_UPDATE_FAILED:
+    case HTTP_UPDATE_FAILED: {
       Serial.printf("[OTA] 更新失败 (%d): %s\n", ESPhttpUpdate.getLastError(), ESPhttpUpdate.getLastErrorString().c_str());
+      Serial.println("[OTA] 服务端将在5分钟后自动判定超时失败");
       otaInProgress = false;
       break;
+    }
     case HTTP_UPDATE_NO_UPDATES:
       Serial.println("[OTA] 无可用更新");
       otaInProgress = false;
       break;
     case HTTP_UPDATE_OK:
-      Serial.println("[OTA] 更新成功! 即将重启...");
+      Serial.println("[OTA] 更新成功! 500ms 后重启...");
+      Serial.println("[OTA] 服务端将通过轮询间隙自动检测重启并标记成功");
+      // 直接重启，无需回报（服务端通过轮询间隙 >= 10秒自动判断 OTA 成功）
       delay(500);
       ESP.restart();
       break;
@@ -139,8 +148,8 @@ void checkAndDoOTA(String body) {
 // ============== HTTP 轮询 + WiFi 上报 ==============
 void doPoll() {
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("[WiFi] 断开，尝试重连...");
-    setupWiFi();
+    // WiFi 断开：自动重连已在后台进行，跳过本次轮询等待下次
+    Serial.println("[WiFi] 未连接，等待自动重连...");
     return;
   }
 
@@ -150,7 +159,7 @@ void doPoll() {
     return;
   }
 
-  // 构建带 WiFi 信息的 URL
+  // 构建带 WiFi 信息的 URL（v3.33: 不再需要 ota_id/ota_success 参数）
   String ssid = WiFi.SSID();
   String ip = WiFi.localIP().toString();
   String url = String("http://") + SERVER_HOST + "/api.php?route=poll"
@@ -159,9 +168,9 @@ void doPoll() {
     + "&wifi=" + urlencode(ssid.c_str())
     + "&rssi=" + String(WiFi.RSSI())
     + "&ip=" + ip;
-  
+
   httpClient.begin(wifiClient, url);
-  httpClient.setTimeout(3000);
+  httpClient.setTimeout(5000);  // 5 秒超时（原 3 秒对共享主机太短）
   httpClient.addHeader("Accept", "text/plain");
   
   int code = httpClient.GET();
@@ -169,7 +178,7 @@ void doPoll() {
   if (code == 200) {
     String body = httpClient.getString();
     applyPinStates(body);
-    // 检查 OTA 更新
+    // 检查是否有 OTA 更新
     checkAndDoOTA(body);
   } else if (code > 0) {
     Serial.printf("[HTTP] 错误码: %d\n", code);
@@ -199,7 +208,7 @@ String urlencode(const char* str) {
 // ============== 入口 ==============
 void setup() {
   Serial.begin(SERIAL_BAUD);
-  Serial.println("\n====== IoT Boot (Dynamic Pins + OTA) ======");
+  Serial.println("\n====== IoT Boot (Dynamic Pins + OTA v3.33) ======");
   Serial.printf("[ID] %s  [KEY] %.8s...\n", DEVICE_ID, DEVICE_KEY);
   setupWiFi();
 }

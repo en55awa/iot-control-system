@@ -1,6 +1,14 @@
+EEEEEEEE  N    N  5555555  5555555
+E         N N  N  5        5
+EEEEEEEE  N  N N  5555555  5555555
+E         N   NN        5        5
+EEEEEEEE  N    N  5555555  5555555
+
 # 物联网控制系统 - 版本更新日志
 
 ## 版本号策略
+
+# 如遇到版本跳动较大，则为当时版本存在严重BUG，无法正常使用或影响严重，则会不会发布，后续版本将保留之前版本的所有更新
 
 采用 `主版本.次版本` 双位小数格式，遵循以下递增规则：
 
@@ -18,6 +26,101 @@
 ---
 
 ## 更新历史
+
+### v3.35
+- **类型**：小更新 (+0.01)
+- **内容**：UI 优化 - OTA 记录删除按钮 + 管理设备按钮配色
+  - **OTA 升级记录删除按钮**：
+    - 原来只有 pending/failed 状态的记录显示"取消"按钮，done 状态的记录无法删除
+    - 改为所有非 updating 状态的记录都显示"删除"按钮（updating 状态设备正在更新中，不允许删除）
+    - 后端 `DELETE /ota/{id}` 接口修改：从"只能删除 pending/failed"改为"允许删除 pending/failed/done，禁止 deleting updating"
+    - pending/failed 删除时重置 `ota_status=0`，done 删除时不影响（已完成状态无需重置）
+  - **管理设备按钮配色**：
+    - 原来：灰色背景 (`var(--bg3)`) + 灰色文字 (`var(--muted)`)，不够醒目
+    - 改为：主题色背景 (`var(--accent)`) + 白色文字 + 悬停上浮效果
+    - 新增 `.btn-manage` CSS class 替换内联样式
+- **涉及文件**：`api.php`、`index.html`
+- **部署说明**：上传 `api.php` 和 `index.html` 即可，无需数据库迁移或固件更新。建议同时上传 `config.php`（含 v3.34 的 PHP 进程超时修复）
+
+### v3.34
+- **类型**：小更新 (+0.01)
+- **内容**：BUG 修复 - PHP 进程卡死导致设备间歇性掉线
+  - **问题背景**：ESP8266 每 5 秒轮询一次，偶尔某次请求卡住（数据库慢/网络阻塞），由于没有任何超时保护，PHP 进程会永远挂在后台，占满共享主机进程池后导致后续请求全部排队 → 设备掉线
+  - **根因分析**：`config.php` 的 PDO 连接没有任何超时参数，PHP 脚本没有执行时间限制，`ignore_user_abort` 未设置导致客户端断开后脚本仍继续运行
+  - **修复内容**（`config.php`）：
+    - 新增 `set_time_limit(10)`：脚本最多运行 10 秒（轮询通常 <1 秒）
+    - 新增 `ignore_user_abort(false)`：客户端断开时终止脚本
+    - 新增 `ini_set('default_socket_timeout', 5)`：socket I/O 超时 5 秒
+    - PDO DSN 新增 `connect_timeout=3`：MySQL 连接超时 3 秒
+    - 连接后执行 `SET SESSION wait_timeout = 10`：空闲连接 10 秒自动断开
+  - **修复内容**（`api.php`）：
+    - 移除每次请求都执行的 `CREATE TABLE IF NOT EXISTS login_attempts`（5 秒一次轮询白白多一次数据库查询）
+    - OTA 固件下载 `readfile()` 前放宽 `set_time_limit(60)` + 清空输出缓冲
+    - OTA 固件上传前放宽 `set_time_limit(30)`
+- **涉及文件**：`config.php`、`api.php`
+- **部署说明**：上传更新后的 `config.php` 和 `api.php` 即可，无需数据库迁移或固件更新
+
+### v3.33
+- **类型**：小更新 (+0.01)
+- **内容**：BUG 修复 - OTA 状态追踪改为服务端自动检测
+  - **问题背景**：v3.32 的 OTA 回报机制依赖 ESP8266 在更新完成后通过 poll 参数回报结果，但 ESP8266 写完 Flash 后 WiFi/HTTP 状态不稳定，经常无法发送 poll，导致更新成功却显示失败
+  - **解决方案**：OTA 状态完全由服务端通过轮询间隙自动追踪，固件无需任何回报
+  - **核心原理**：
+    - OTA 期间 `ESPhttpUpdate.update()` 是阻塞调用，设备不会发起轮询
+    - 如果在"更新中"(2)状态下收到该设备的轮询请求 → 说明设备已完成 OTA 并重启恢复在线
+    - 直接重置为正常状态(0)，标记固件记录为已完成
+    - 5 分钟内未恢复轮询 → OTA 失败（状态 4）
+  - **数据库变更**：
+    - `device_keys` 表新增 `ota_status` (TINYINT: 0=正常 1=待更新 2=更新中 3=已更新 4=失败)
+    - `device_keys` 表新增 `ota_sent_at` (TIMESTAMP: OTA 下发时间，用于超时判断)
+    - 迁移脚本：`upgrade_db_ota_status.php`（访问后自动执行并删除）
+  - **服务端变更**（`api.php`）：
+    - `handlePoll`：在更新 `last_seen` 前读取 `ota_status`；若状态为 2（更新中）且设备发起轮询 → 说明 OTA 完成设备已重启 → 重置为 0，标记固件为 done
+    - `handleOTA`（上传）：设置 `device_keys.ota_status = 1`
+    - `handleOTA`（取消）：重置 `device_keys.ota_status = 0`
+    - `ota/status`：返回 `{ota_status: N, records: [...]}`，查询时也做超时兜底检查
+    - `handleOTAReport`：保留旧版兼容，同步更新 `device_keys.ota_status`
+  - **固件变更**（`iot_firmware.ino`）：
+    - **删除**：EEPROM 持久化代码（`saveOtaResultToEEPROM`/`loadOtaResultFromEEPROM`）
+    - **删除**：poll 中的 OTA 回报参数（`ota_id`/`ota_success`/`ota_error`）
+    - **删除**：`pendingOtaId`/`pendingOtaSuccess`/`pendingOtaError`/`needRestartAfterReport` 变量
+    - **简化**：OTA 成功后直接 `ESP.restart()`，无需先 poll 回报
+    - **简化**：OTA 失败后继续正常轮询，服务端 5 分钟后自动判定超时
+    - 代码从 327 行精简至 221 行
+  - **前端变更**（`index.html`）：
+    - `loadOTAStatus` 适配新响应格式 `{ota_status, records}`
+    - 新增 OTA 状态横幅：在记录列表上方显示当前设备 OTA 状态（待更新/更新中/已更新/更新失败）
+  - **向后兼容**：
+    - 旧版固件（v3.32）的 poll 回报参数仍被处理（`ota_id`/`ota_success`/`ota_error`）
+    - `POST ota/report` 接口保留
+    - 旧固件升级到新固件后自动获得新机制
+- **涉及文件**：`api.php`、`index.html`、`iot_firmware.ino`、`upgrade_db_ota_status.php`（新增）
+- **部署说明**：
+  1. 上传 `upgrade_db_ota_status.php` 到服务器并访问一次执行数据库迁移（自动删除）
+  2. 上传更新后的 `api.php` 和 `index.html`
+  3. 重新编译并烧录 `iot_firmware.ino` 到 ESP8266（固件大幅简化，必须更新）
+
+### v3.32
+- **类型**：小更新 (+0.01)
+- **内容**：BUG 修复 - OTA 状态显示 + 回报机制优化
+  - **前端 BUG 修复**：设备详情页 OTA 状态只显示"更新中"不刷新
+    - 原因：`loadOTAStatus` 仅在打开设备详情时调用一次，5 秒定时器只刷新引脚状态
+    - 修复：将 OTA 状态刷新加入 `refreshPinStates` 定时任务，每 5 秒自动刷新
+    - 现在"待更新 → 更新中 → 已完成/失败"状态会实时变化
+  - **OTA 回报机制优化**：ESP8266 不再单独发 POST 回报，改为在 poll 请求中携带
+    - 原方案：更新完成后单独 POST `ota/report` 回报结果（两次 HTTP 请求）
+    - 新方案：更新完成后存入变量 + EEPROM，下次 poll 时通过 URL 参数 `ota_id`、`ota_success`、`ota_error` 一并回报（一次请求搞定）
+    - 更新成功时：先 poll 回报结果，再重启（确保服务端收到状态）
+    - 更新失败时：下次 poll 自动携带失败信息
+    - **EEPROM 持久化**：OTA 成功结果同时写入 EEPROM，防止 ESP8266 在写完 flash 后因 WiFi/HTTP 状态不稳定无法发 poll 而看门狗重启
+    - 重启后 `setup()` 从 EEPROM 读取待回报结果，第一次 poll 自动携带，然后清除
+    - `POST ota/report` 接口保留作为旧版固件兼容，不再推荐使用
+    - 服务端 `handlePoll` 新增 OTA 回报参数解析与状态更新逻辑
+- **涉及文件**：`api.php`、`index.html`、`iot_firmware.ino`
+- **部署说明**：
+  1. 上传更新后的 `api.php` 和 `index.html`
+  2. 重新编译并烧录 `iot_firmware.ino` 到 ESP8266
+  3. 无需数据库迁移
 
 ### v3.31
 - **类型**：小更新 (+0.01)
@@ -127,7 +230,7 @@
 - **类型**：小更新 (+0.01)
 - **内容**：安全审计修复
   - JWT 密钥从环境变量读取，不再硬编码
-  - CORS 限制为指定域名
+  - CORS 限制为 en55.fun 域名
   - 错误信息脱敏，不暴露数据库结构
   - 登录失败 5 次后锁定 5 分钟
   - 敏感文件 `.htaccess` 保护
