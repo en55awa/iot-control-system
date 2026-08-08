@@ -18,9 +18,10 @@ ESP8266 + PHP + MySQL HTTP Polling 架构的物联网控制平台。
 | [`v3.22`](../../tree/v3.22) | v3.22 | Token 与密码绑定安全修复 | 安全加固版 |
 | [`v3.30`](../../tree/v3.30) | v3.30 | OTA 固件更新、Web 端远程刷机 | 远程固件维护 |
 | [`v3.31`](../../tree/v3.31) | v3.31 | JWT 退出销毁、OTA 状态管理修复 | 安全修复版 |
-| [`v3.35`](../../tree/v3.35) | v3.35 | OTA 记录删除、PHP 超时保护、按钮配色优化 | **推荐部署版本** |
+| [`v3.35`](../../tree/v3.35) | v3.35 | OTA 记录删除、PHP 超时保护、按钮配色优化 | 稳定版 |
+| [`v4.35`](../../tree/v4.35) | v4.35 | 开关隐藏、自定义指令系统（定时开关/延时关闭/定时重启） | **推荐部署版本** |
 
-> **建议新用户直接使用 `v3.35` 分支。** 包含全部安全修复、OTA 功能改进和 PHP 进程超时保护。
+> **建议新用户直接使用 `v4.35` 分支。** 包含全部安全修复、OTA 功能改进、PHP 进程超时保护、开关隐藏和自定义指令系统。
 
 ### 如何获取某个版本
 
@@ -28,10 +29,10 @@ ESP8266 + PHP + MySQL HTTP Polling 架构的物联网控制平台。
 # 克隆仓库后切换到对应分支
 git clone https://github.com/en55awa/iot-control-system.git
 cd iot-control-system
-git checkout v3.35
+git checkout v4.35
 
 # 或只下载某个分支
-git clone -b v3.35 https://github.com/en55awa/iot-control-system.git
+git clone -b v4.35 https://github.com/en55awa/iot-control-system.git
 ```
 
 ---
@@ -72,9 +73,10 @@ git clone -b v3.35 https://github.com/en55awa/iot-control-system.git
 | v3.22 | Token 与密码绑定安全修复 | 安全加固版 |
 | v3.30 | OTA 固件更新、Web 端远程刷机 | 远程固件维护 |
 | v3.31 | JWT 退出销毁、OTA 状态管理修复 | 安全修复版 |
-| v3.35 | OTA 记录删除、PHP 超时保护、按钮配色优化 | **推荐部署版本** |
+| v3.35 | OTA 记录删除、PHP 超时保护、按钮配色优化 | 稳定版 |
+| v4.35 | 开关隐藏、自定义指令系统（定时开关/延时关闭/定时重启） | **推荐部署版本** |
 
-> **建议新用户直接使用 v3.35。** 如需从旧版升级，请阅读下方「版本升级路径」章节。
+> **建议新用户直接使用 v4.35。** 如需从旧版升级，请阅读下方「版本升级路径」章节。
 
 ---
 
@@ -175,7 +177,7 @@ define('RESET_KEY', '你的随机密钥');
 
 ## 部署步骤（全新安装）
 
-以 **v3.35** 为例，其他版本步骤相同。
+以 **v4.35** 为例，其他版本步骤相同。
 
 ### 第一步：创建数据库
 
@@ -333,6 +335,7 @@ index.html
 upgrade_db_v3.php（如有）
 upgrade_db_ota.php（v3.30+）
 upgrade_db_ota_status.php（v3.33+）
+upgrade_db_v435.php（v4.35+）
 tool/resetadmin.php（如有）
 ```
 
@@ -348,6 +351,11 @@ tool/resetadmin.php（如有）
 2. `http://你的域名/upgrade_db_ota_status.php`（v3.33+），脚本会自动：
    - 添加 `device_keys.ota_status` 字段（OTA 状态追踪）
    - 添加 `device_keys.ota_sent_at` 字段（OTA 下发时间）
+
+3. `http://你的域名/upgrade_db_v435.php`（v4.35+），脚本会自动：
+   - 添加 `device_pins.hidden` 字段（开关隐藏功能）
+   - 创建 `device_schedules` 表（自定义指令系统）
+   - 确保 `device_status.updated_at` 为 ON UPDATE CURRENT_TIMESTAMP
 
 执行成功后脚本自动删除，如未删除请手动删除。
 
@@ -418,7 +426,20 @@ tool/resetadmin.php（如有）
 5. **建议同时上传 `config.php`**（v3.34 起新增 PHP 进程超时保护，防止设备间歇性掉线）
 6. 重新编译并烧录固件（v3.33 起简化 OTA 回报机制，固件大幅精简，必须更新）
 
-> **跨版本升级**：从 v3.22 或 v3.30 直接升级到 v3.35 也是安全的。先执行 `upgrade_db_ota.php`，再执行 `upgrade_db_ota_status.php`，两个脚本均使用幂等操作，会一次性完成所有数据库迁移。
+> **跨版本升级**：从 v3.22 或 v3.30 直接升级到 v4.35 也是安全的。依次执行 `upgrade_db_ota.php` → `upgrade_db_ota_status.php` → `upgrade_db_v435.php`，三个脚本均使用幂等操作，会一次性完成所有数据库迁移。
+
+### v3.35 → v4.35
+
+1. 备份现有数据库和文件
+2. 上传 v4.35 的所有文件（覆盖）
+3. 浏览器访问 `http://你的域名/upgrade_db_v435.php`（新增 `device_pins.hidden` 字段、创建 `device_schedules` 表）
+4. 执行成功后脚本自动删除
+5. 重新编译并烧录固件（新增 `CMD:reboot` 指令解析，必须更新）
+
+> **v4.35 新功能**：
+> - 开关隐藏：每个引脚旁可隐藏/显示，隐藏的开关仍可被组合开关控制
+> - 自定义指令：定时开关、延时关闭、定时重启，服务端自动执行
+> - 包含 v3.34/v3.35 的全部修复
 
 > **v3.35 包含的中间版本修复**：
 > - v3.32：OTA 状态实时刷新 + 回报机制优化
