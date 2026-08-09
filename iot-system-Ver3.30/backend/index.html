@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>IoT 控制系统</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+
+/* ===== 主题变量 ===== */
+:root{
+  --bg:#0f1923;--bg2:#1a2736;--bg3:#243447;
+  --ink:#e4e8ec;--muted:#7a8a9e;--rule:#2d3e50;
+  --accent:#00c896;--accent-dim:#00a87a;--danger:#ff4757;--warn:#ffa502;
+  --radius:10px;
+  --ts:0.3s;
+}
+body.light{
+  --bg:#eef2f7;--bg2:#ffffff;--bg3:#f5f7fa;
+  --ink:#1a2332;--muted:#6b7b8d;--rule:#dce3eb;
+  --accent:#0ea371;--accent-dim:#0b8a60;--danger:#e63946;--warn:#e6930a;
+}
+
+/* 全局过渡 */
+body,header,.login-box,.device-card,.device-detail,.key-card,.user-card,
+.settings-section,.switch-item,.combo-card,.combo-pin-item,
+.tab-btn,.modal,.share-item,.log-table td,.log-table th,
+.btn-add,.btn-primary,.btn-pin-add,.btn-combo-add,.btn-combo-exec,
+.switch .slider,.switch .slider::before,.detail-wifi,.wifi-item,
+.ota-section,.ota-record,.ota-badge,.btn-ota{
+  transition:background var(--ts) ease,color var(--ts) ease,
+             border-color var(--ts) ease,box-shadow var(--ts) ease;
+}
+
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink);min-height:100vh;font-size:15px;line-height:1.5;overflow-x:hidden}
+button{cursor:pointer;border:none;font:inherit}input,select{font:inherit}
+
+/* ===== SVG 动画背景 ===== */
+#bgLayer{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden}
+#bgLayer .night-bg{position:absolute;inset:0;background:linear-gradient(170deg,#0a1628 0%,#0f1923 40%,#162236 100%);transition:opacity var(--ts) ease}
+body.light #bgLayer .night-bg{opacity:0}
+#bgLayer .day-bg{position:absolute;inset:0;background:linear-gradient(170deg,#d4e5f7 0%,#eef2f7 40%,#f8fafc 100%);opacity:0;transition:opacity var(--ts) ease}
+body.light #bgLayer .day-bg{opacity:1}
+.star{position:absolute;background:#fff;border-radius:50%;transition:opacity var(--ts) ease}
+@keyframes twinkle{0%,100%{opacity:.3}50%{opacity:1}}
+body.light .star{opacity:0!important}
+#moon{position:absolute;top:8%;right:10%;width:60px;height:60px;transition:opacity var(--ts) ease,transform var(--ts) ease}
+body.light #moon{opacity:0;transform:translateY(-20px)}
+@keyframes moonGlow{0%,100%{filter:drop-shadow(0 0 15px rgba(255,255,255,.3))}50%{filter:drop-shadow(0 0 25px rgba(255,255,255,.5))}}
+#sun{position:absolute;top:8%;right:10%;width:70px;height:70px;opacity:0;transform:translateY(-20px);transition:opacity var(--ts) ease,transform var(--ts) ease}
+body.light #sun{opacity:1;transform:translateY(0)}
+@keyframes sunSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+@keyframes sunPulse{0%,100%{filter:drop-shadow(0 0 20px rgba(255,200,50,.4))}50%{filter:drop-shadow(0 0 35px rgba(255,200,50,.7))}}
+.cloud{position:absolute;opacity:0;transition:opacity var(--ts) ease}
+body.light .cloud{opacity:1}
+@keyframes cd1{from{transform:translateX(-200px)}to{transform:translateX(calc(100vw + 200px))}}
+@keyframes cd2{from{transform:translateX(calc(100vw + 150px))}to{transform:translateX(-250px)}}
+@keyframes cd3{from{transform:translateX(-180px)}to{transform:translateX(calc(100vw + 180px))}}
+
+/* 内容层 */
+#loginPage,#appPage{position:relative;z-index:1}
+.modal-overlay{z-index:20}.toast{z-index:999}
+
+/* ===== 主题切换按钮 ===== */
+.theme-btn{background:none;border:none;cursor:pointer;padding:4px 8px;border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--muted);transition:all .2s}
+.theme-btn:hover{background:var(--bg3);color:var(--ink)}
+.theme-btn svg{width:18px;height:18px}
+
+/* ===== 登录 ===== */
+#loginPage{display:flex;justify-content:center;align-items:center;min-height:100vh;padding:20px}
+.login-box{background:var(--bg2);border:1px solid var(--rule);border-radius:var(--radius);padding:40px 32px;width:100%;max-width:360px;backdrop-filter:blur(10px)}
+.login-box h1{font-size:22px;margin-bottom:6px}
+.login-box p{color:var(--muted);font-size:13px;margin-bottom:28px}
+.login-box label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px}
+.login-box input{width:100%;padding:10px 12px;background:var(--bg3);border:1px solid var(--rule);border-radius:6px;color:var(--ink);font-size:14px;margin-bottom:16px;outline:none}
+.login-box input:focus{border-color:var(--accent)}
+.btn-primary{width:100%;padding:11px;background:var(--accent);color:#fff;border-radius:6px;font-size:15px;font-weight:600}
+.btn-primary:hover{background:var(--accent-dim)}
+.login-error{color:var(--danger);font-size:13px;margin-top:12px;text-align:center;min-height:20px}
+
+/* ===== 主框架 ===== */
+#appPage{display:none;flex-direction:column;min-height:100vh}
+header{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;background:var(--bg2);border-bottom:1px solid var(--rule);position:sticky;top:0;z-index:10;backdrop-filter:blur(10px)}
+header h1{font-size:17px}
+header .user-info{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:8px}
+header .role-badge{font-size:10px;padding:2px 8px;border-radius:6px;font-weight:600}
+header .role-badge.admin{background:rgba(255,71,87,.15);color:var(--danger)}
+header .role-badge.user{background:rgba(0,200,150,.12);color:var(--accent)}
+header .header-right{display:flex;align-items:center;gap:8px}
+header button{background:none;color:var(--muted);font-size:13px;padding:6px 12px;border-radius:6px}
+header button:hover{color:var(--ink);background:var(--bg3)}
+main{flex:1;padding:20px;max-width:600px;margin:0 auto;width:100%;padding-bottom:80px}
+
+/* ===== Tabs ===== */
+.tabs{display:flex;gap:6px;margin-bottom:20px}
+.tab-btn{flex:1;padding:8px;background:var(--bg2);border:1px solid var(--rule);border-radius:6px;color:var(--muted);font-size:13px;font-weight:500}
+.tab-btn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.tab-btn:hover:not(.active){background:var(--bg3);color:var(--ink)}
+.tab-content{display:none}.tab-content.active{display:block}
+
+/* ===== 设备卡片 ===== */
+.device-card{background:var(--bg2);border:1px solid var(--rule);border-radius:var(--radius);padding:20px;margin-bottom:14px;backdrop-filter:blur(10px)}
+.device-card .dev-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+.device-card .dev-name{font-size:16px;font-weight:600}
+.device-card .dev-id{font-size:12px;color:var(--muted);margin-bottom:4px}
+.dev-status{font-size:11px;padding:3px 8px;border-radius:10px;font-weight:500}
+.dev-status.online{background:rgba(0,200,150,.15);color:var(--accent)}
+.dev-status.offline{background:rgba(255,71,87,.15);color:var(--danger)}
+.dev-status.disabled{background:rgba(255,165,2,.15);color:var(--warn)}
+.dev-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle}
+.dev-dot.on{background:var(--accent);box-shadow:0 0 6px var(--accent)}
+.dev-dot.off{background:var(--danger);box-shadow:0 0 6px var(--danger)}
+.shared-tag{font-size:10px;padding:2px 6px;border-radius:4px;background:rgba(52,152,219,.15);color:#3498db;margin-left:6px}
+
+/* ===== 开关 ===== */
+.switches{display:flex;gap:10px;flex-wrap:wrap}
+.switch-item{flex:1;min-width:120px;background:var(--bg3);border-radius:8px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between}
+.switch-item.combo-switch{background:linear-gradient(135deg,var(--bg3),rgba(0,200,150,.08));border:1px solid rgba(0,200,150,.15)}
+.switch-item .sw-info{display:flex;flex-direction:column;gap:2px}
+.switch-item .sw-label{font-size:14px;font-weight:500}
+.switch-item .sw-pin{font-size:11px;color:var(--muted)}
+.switch-item .sw-del{background:none;color:var(--muted);font-size:11px;margin-top:2px;padding:0;border-bottom:1px dashed var(--muted);transition:color .2s}
+.switch-item .sw-del:hover{color:var(--danger)}
+.switch{position:relative;width:48px;height:26px;flex-shrink:0}
+.switch input{opacity:0;width:0;height:0}
+.switch .slider{position:absolute;inset:0;background:var(--rule);border-radius:13px;cursor:pointer;transition:background .3s}
+.switch .slider::before{content:'';position:absolute;width:20px;height:20px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:transform .3s}
+.switch input:checked+.slider{background:var(--accent)}
+.switch input:checked+.slider::before{transform:translateX(22px)}
+
+/* ===== 引脚配置 ===== */
+.pin-config{margin-top:12px;padding-top:12px;border-top:1px solid var(--rule)}
+.pin-config h4{font-size:12px;color:var(--muted);font-weight:500;margin-bottom:8px}
+.pin-add-row{display:flex;gap:6px;margin-bottom:8px}
+.pin-add-row input,.pin-add-row select{flex:1;padding:7px 10px;background:var(--bg3);border:1px solid var(--rule);border-radius:5px;color:var(--ink);font-size:13px;outline:none}
+.pin-add-row input:focus,.pin-add-row select:focus{border-color:var(--accent)}
+.pin-add-row input{flex:2}
+.btn-pin-add{padding:7px 14px;background:var(--accent);color:#fff;border-radius:5px;font-size:12px;font-weight:600;white-space:nowrap}
+.btn-pin-add:hover{background:var(--accent-dim)}
+.btn-sc-add{padding:7px 14px;background:var(--bg3);color:var(--muted);border:1px solid var(--rule);border-radius:5px;font-size:12px;font-weight:500;white-space:nowrap;transition:all .2s}
+.btn-sc-add:hover{border-color:var(--accent);color:var(--accent)}
+
+/* ===== 设备详情 ===== */
+.device-detail{background:var(--bg2);border:1px solid var(--rule);border-radius:var(--radius);padding:20px;margin-bottom:14px;backdrop-filter:blur(10px)}
+.back-btn{background:none;color:var(--muted);font-size:13px;padding:4px 0;margin-bottom:12px;display:inline-block;cursor:pointer;border:none}
+.back-btn:hover{color:var(--ink)}
+.detail-wifi{display:flex;gap:16px;flex-wrap:wrap;margin-top:14px;padding:12px;background:var(--bg3);border-radius:8px}
+.wifi-item{flex:1;min-width:100px}
+.wifi-item .wifi-label{font-size:11px;color:var(--muted)}
+.wifi-item .wifi-val{font-size:15px;font-weight:600;margin-top:2px}
+.rssi-good{color:var(--accent)}.rssi-mid{color:var(--warn)}.rssi-bad{color:var(--danger)}
+
+/* ===== WiFi 日志表 ===== */
+.log-section{margin-top:16px}
+.log-section h4{font-size:13px;color:var(--muted);margin-bottom:8px;font-weight:500}
+.log-table{width:100%;border-collapse:collapse;font-size:13px}
+.log-table th{text-align:left;color:var(--muted);font-weight:500;padding:6px 8px;border-bottom:1px solid var(--rule)}
+.log-table td{padding:6px 8px;border-bottom:1px solid rgba(45,62,80,.2)}
+
+/* ===== 共享 ===== */
+.share-section{margin-top:16px;padding-top:12px;border-top:1px solid var(--rule)}
+.share-section h4{font-size:12px;color:var(--muted);font-weight:500;margin-bottom:8px}
+.share-row{display:flex;gap:6px;margin-bottom:8px}
+.share-row input{flex:1;padding:7px 10px;background:var(--bg3);border:1px solid var(--rule);border-radius:5px;color:var(--ink);font-size:13px;outline:none}
+.share-row input:focus{border-color:var(--accent)}
+.btn-share{padding:7px 14px;background:#3498db;color:#fff;border-radius:5px;font-size:12px;font-weight:600}
+.btn-share:hover{background:#2980b9}
+.share-list{margin-top:8px}
+.share-item{background:var(--bg3);border-radius:6px;padding:8px 12px;display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+.share-item .share-name{font-size:13px}
+.share-item .btn-cancel{background:none;color:var(--danger);font-size:12px;padding:2px 6px;border-radius:4px;border:1px solid var(--danger);transition:all .2s}
+.share-item .btn-cancel:hover{background:rgba(255,71,87,.15)}
+
+/* ===== Key 管理 ===== */
+.key-card{background:var(--bg2);border:1px solid var(--rule);border-radius:var(--radius);padding:14px 16px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;backdrop-filter:blur(10px)}
+.key-card .key-val{font-family:monospace;font-size:14px;letter-spacing:1px}
+.key-card .key-remark{font-size:12px;color:var(--muted)}
+.key-status{font-size:11px;padding:2px 8px;border-radius:8px}
+.key-status.active{background:rgba(0,200,150,.15);color:var(--accent)}
+.key-status.disabled{background:rgba(255,165,2,.15);color:var(--warn)}
+.key-actions{display:flex;gap:6px}
+.btn-sm{padding:5px 10px;border-radius:5px;font-size:12px;font-weight:500;transition:all .2s}
+.btn-sm.toggle-on{background:rgba(0,200,150,.15);color:var(--accent)}.btn-sm.toggle-on:hover{background:rgba(0,200,150,.25)}
+.btn-sm.toggle-off{background:rgba(255,165,2,.15);color:var(--warn)}.btn-sm.toggle-off:hover{background:rgba(255,165,2,.25)}
+.btn-sm.btn-del{background:rgba(255,71,87,.1);color:var(--danger)}.btn-sm.btn-del:hover{background:rgba(255,71,87,.2)}
+.btn-add{width:100%;padding:12px;background:var(--bg2);border:1px dashed var(--rule);border-radius:var(--radius);color:var(--muted);font-size:14px;transition:all .2s;margin-bottom:14px}
+.btn-add:hover{border-color:var(--accent);color:var(--accent)}
+
+/* ===== 用户管理 ===== */
+.user-card{background:var(--bg2);border:1px solid var(--rule);border-radius:var(--radius);padding:14px 16px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;backdrop-filter:blur(10px)}
+.user-card .user-info{display:flex;flex-direction:column;gap:2px}
+.user-card .user-name{font-size:14px;font-weight:600}
+.user-card .user-meta{font-size:11px;color:var(--muted)}
+.btn-user-disable{background:rgba(255,71,87,.1);color:var(--danger)}.btn-user-disable:hover{background:rgba(255,71,87,.2)}
+.btn-user-enable{background:rgba(0,200,150,.1);color:var(--accent)}.btn-user-enable:hover{background:rgba(0,200,150,.2)}
+.btn-user-del{background:rgba(255,71,87,.1);color:var(--danger)}.btn-user-del:hover{background:rgba(255,71,87,.2)}
+
+/* ===== 设置 ===== */
+.settings-section{background:var(--bg2);border:1px solid var(--rule);border-radius:var(--radius);padding:20px;margin-bottom:14px;backdrop-filter:blur(10px)}
+.settings-section h3{font-size:14px;margin-bottom:14px;color:var(--muted);font-weight:500}
+.settings-section label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px}
+.settings-section input{width:100%;padding:10px 12px;background:var(--bg3);border:1px solid var(--rule);border-radius:6px;color:var(--ink);font-size:14px;margin-bottom:12px;outline:none}
+.settings-section input:focus{border-color:var(--accent)}
+.btn-save{padding:9px 20px;background:var(--accent);color:#fff;border-radius:6px;font-size:13px;font-weight:600}.btn-save:hover{background:var(--accent-dim)}
+
+/* ===== 预设 ===== */
+.combo-section{margin-top:16px;padding-top:12px;border-top:1px solid var(--rule)}
+.combo-section h4{font-size:12px;color:var(--muted);font-weight:500;margin-bottom:8px}
+.combo-card{background:var(--bg3);border-radius:8px;padding:12px 14px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
+.combo-card .combo-name{font-size:14px;font-weight:600}
+.combo-card .combo-desc{font-size:11px;color:var(--muted);margin-top:2px}
+.combo-card .combo-actions{display:flex;gap:6px}
+.btn-combo-exec{padding:7px 16px;background:var(--accent);color:#fff;border-radius:5px;font-size:12px;font-weight:600}
+.btn-combo-exec:hover{background:var(--accent-dim)}
+.btn-combo-del{padding:7px 10px;background:rgba(255,71,87,.1);color:var(--danger);border-radius:5px;font-size:12px}
+.btn-combo-del:hover{background:rgba(255,71,87,.2)}
+.combo-pin-list{margin-top:8px}
+.combo-pin-item{display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--bg3);border-radius:5px;margin-bottom:4px;font-size:13px}
+.combo-pin-item label{flex:1;display:flex;align-items:center;gap:6px}
+.btn-combo-add{padding:7px 14px;background:var(--accent);color:#fff;border-radius:5px;font-size:12px;font-weight:600;white-space:nowrap}
+.btn-combo-add:hover{background:var(--accent-dim)}
+
+/* ===== Toast / Modal / Empty ===== */
+.toast{position:fixed;top:20px;left:50%;transform:translateX(-50%);padding:10px 24px;border-radius:8px;font-size:13px;font-weight:500;animation:toastIn .3s ease}
+.toast.success{background:rgba(0,200,150,.9);color:#fff}.toast.error{background:rgba(255,71,87,.9);color:#fff}
+@keyframes toastIn{from{opacity:0;transform:translateX(-50%) translateY(-10px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+.empty{text-align:center;padding:40px 0;color:var(--muted);font-size:14px}
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:20;justify-content:center;align-items:center}
+.modal-overlay.show{display:flex}
+.modal{background:var(--bg2);border:1px solid var(--rule);border-radius:var(--radius);padding:28px;max-width:360px;width:90%}
+.modal h3{font-size:16px;margin-bottom:16px}
+.modal label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px}
+.modal input,.modal select{width:100%;padding:9px 12px;background:var(--bg3);border:1px solid var(--rule);border-radius:6px;color:var(--ink);font-size:14px;margin-bottom:12px;outline:none}
+.modal input:focus{border-color:var(--accent)}
+.modal-btns{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+.modal-btns button{padding:8px 16px;border-radius:6px;font-size:13px;font-weight:500;transition:all .2s}
+.modal-cancel{background:var(--bg3);color:var(--muted)}.modal-cancel:hover{color:var(--ink)}
+.modal-confirm{background:var(--accent);color:#fff}.modal-confirm:hover{background:var(--accent-dim)}
+
+/* ===== 响应式 ===== */
+@media(max-width:480px){
+  .switches{flex-direction:column}
+  .switch-item{min-width:unset}
+  header{padding:10px 14px}
+  header h1{font-size:15px}
+  main{padding:14px 12px 80px}
+ .device-card,.device-detail,.key-card,.user-card,.settings-section{padding:16px 14px}
+  .login-box{padding:32px 24px}
+  .detail-wifi{flex-direction:column;gap:10px}
+  .wifi-item{min-width:unset}
+  #moon{width:45px;height:45px;top:5%;right:8%}
+  #sun{width:50px;height:50px;top:5%;right:8%}
+}
+@media(min-width:768px){
+  #moon{width:80px;height:80px;top:6%;right:12%}
+  #sun{width:90px;height:90px;top:6%;right:12%}
+}
+
+/* ===== OTA 固件更新 ===== */
+.ota-section{margin-top:16px;padding-top:12px;border-top:1px solid var(--rule)}
+.ota-section h4{font-size:13px;color:var(--muted);font-weight:500;margin-bottom:8px}
+.ota-upload-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.ota-upload-row input[type=file]{flex:1;min-width:120px;font-size:12px;padding:6px;background:var(--bg3);border:1px solid var(--rule);border-radius:5px;color:var(--ink)}
+.ota-upload-row input[type=text]{width:100px;padding:7px 10px;background:var(--bg3);border:1px solid var(--rule);border-radius:5px;color:var(--ink);font-size:12px;outline:none}
+.ota-upload-row input[type=text]:focus{border-color:var(--accent)}
+.btn-ota{padding:7px 14px;background:var(--accent);color:#fff;border-radius:5px;font-size:12px;font-weight:600}
+.btn-ota:hover{background:var(--accent-dim)}
+.btn-ota:disabled{opacity:.5;cursor:not-allowed}
+.ota-progress{margin-top:8px}
+.ota-bar-wrap{height:6px;background:var(--rule);border-radius:3px;overflow:hidden}
+.ota-bar{height:100%;background:var(--accent);border-radius:3px;transition:width .3s ease;width:0}
+.ota-progress-text{font-size:11px;color:var(--muted);margin-top:3px}
+.ota-status-list{margin-top:10px}
+.ota-record{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:var(--bg3);border-radius:6px;margin-bottom:6px;font-size:12px}
+.ota-record .ota-info{flex:1}
+.ota-record .ota-ver{font-weight:600;margin-right:6px}
+.ota-record .ota-size{color:var(--muted);margin-right:6px}
+.ota-record .ota-time{color:var(--muted);font-size:11px}
+.ota-badge{font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600}
+.ota-badge.pending{background:rgba(255,165,2,.15);color:var(--warn)}
+.ota-badge.updating{background:rgba(0,200,150,.15);color:var(--accent)}
+.ota-badge.done{background:rgba(0,200,150,.15);color:var(--accent)}
+.ota-badge.failed{background:rgba(255,71,87,.15);color:var(--danger)}
+.btn-ota-cancel{padding:4px 10px;background:transparent;border:1px solid var(--danger);color:var(--danger);border-radius:4px;font-size:11px;margin-left:8px}
+.btn-ota-cancel:hover{background:rgba(255,71,87,.1)}
+</style>
+</head>
+<body>
+
+<!-- SVG 动画背景层 -->
+<div id="bgLayer">
+  <div class="night-bg"></div>
+  <div class="day-bg"></div>
+  <svg id="moon" viewBox="0 0 100 100" style="animation:moonGlow 4s ease-in-out infinite">
+    <defs><radialGradient id="mg"><stop offset="0%" stop-color="#fffbe6"/><stop offset="70%" stop-color="#ffeaa7"/><stop offset="100%" stop-color="#fdcb6e"/></radialGradient></defs>
+    <circle cx="50" cy="50" r="40" fill="url(#mg)"/>
+    <circle cx="62" cy="42" r="32" fill="#0f1923"/>
+  </svg>
+  <svg id="sun" viewBox="0 0 100 100">
+    <g style="animation:sunSpin 20s linear infinite;transform-origin:50px 50px">
+      <line x1="50" y1="5" x2="50" y2="18" stroke="#f9ca24" stroke-width="3" stroke-linecap="round"/>
+      <line x1="50" y1="82" x2="50" y2="95" stroke="#f9ca24" stroke-width="3" stroke-linecap="round"/>
+      <line x1="5" y1="50" x2="18" y2="50" stroke="#f9ca24" stroke-width="3" stroke-linecap="round"/>
+      <line x1="82" y1="50" x2="95" y2="50" stroke="#f9ca24" stroke-width="3" stroke-linecap="round"/>
+      <line x1="17" y1="17" x2="26" y2="26" stroke="#f9ca24" stroke-width="3" stroke-linecap="round"/>
+      <line x1="74" y1="74" x2="83" y2="83" stroke="#f9ca24" stroke-width="3" stroke-linecap="round"/>
+      <line x1="83" y1="17" x2="74" y2="26" stroke="#f9ca24" stroke-width="3" stroke-linecap="round"/>
+      <line x1="17" y1="83" x2="26" y2="74" stroke="#f9ca24" stroke-width="3" stroke-linecap="round"/>
+    </g>
+    <circle cx="50" cy="50" r="25" fill="#f9ca24" style="animation:sunPulse 3s ease-in-out infinite"/>
+  </svg>
+  <svg class="cloud" style="top:15%;animation:cd1 35s linear infinite" viewBox="0 0 200 80" width="160" height="64">
+    <ellipse cx="70" cy="50" rx="60" ry="25" fill="rgba(255,255,255,.85)"/>
+    <ellipse cx="110" cy="40" rx="50" ry="30" fill="rgba(255,255,255,.9)"/>
+    <ellipse cx="140" cy="52" rx="40" ry="20" fill="rgba(255,255,255,.8)"/>
+    <ellipse cx="50" cy="55" rx="35" ry="18" fill="rgba(255,255,255,.75)"/>
+  </svg>
+  <svg class="cloud" style="top:30%;animation:cd2 45s linear infinite;animation-delay:-15s" viewBox="0 0 200 80" width="130" height="52">
+    <ellipse cx="80" cy="48" rx="55" ry="22" fill="rgba(255,255,255,.7)"/>
+    <ellipse cx="120" cy="38" rx="45" ry="28" fill="rgba(255,255,255,.8)"/>
+    <ellipse cx="55" cy="52" rx="30" ry="16" fill="rgba(255,255,255,.65)"/>
+  </svg>
+  <svg class="cloud" style="top:55%;animation:cd3 55s linear infinite;animation-delay:-25s" viewBox="0 0 200 80" width="110" height="44">
+    <ellipse cx="90" cy="50" rx="50" ry="20" fill="rgba(255,255,255,.6)"/>
+    <ellipse cx="130" cy="42" rx="40" ry="25" fill="rgba(255,255,255,.7)"/>
+    <ellipse cx="60" cy="54" rx="28" ry="14" fill="rgba(255,255,255,.55)"/>
+  </svg>
+</div>
+
+<!-- 登录页 -->
+<div id="loginPage">
+  <div class="login-box">
+    <h1>IoT 控制系统</h1>
+    <p>登录以管理你的设备</p>
+    <label>用户名</label>
+    <input type="text" id="loginUser" placeholder="用户名" autocomplete="username">
+    <label>密码</label>
+    <input type="password" id="loginPass" placeholder="密码" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+    <button class="btn-primary" onclick="doLogin()">登 录</button>
+    <div class="login-error" id="loginError"></div>
+  </div>
+</div>
+
+<!-- 主页面 -->
+<div id="appPage">
+  <header>
+    <h1>IoT 控制</h1>
+    <div class="header-right">
+      <button class="theme-btn" onclick="toggleTheme()" title="切换主题">
+        <svg id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+        </svg>
+      </button>
+      <div class="user-info">
+        <span id="headerUsername"></span>
+        <span class="role-badge" id="headerRole"></span>
+        <span style="font-size:10px;color:var(--muted);margin-left:4px">前端v3.30 | 后端<span id="backendVer">...</span></span>
+      </div>
+      <button onclick="logout()">退出</button>
+    </div>
+  </header>
+  <main>
+    <div class="tabs">
+      <button class="tab-btn active">设备管理</button>
+      <button class="tab-btn">Key管理</button>
+      <button class="tab-btn">设置</button>
+      <button class="tab-btn" style="display:none">用户管理</button>
+    </div>
+    <div id="tabDevices" class="tab-content active"><div id="deviceList"></div></div>
+    <div id="tabKeys" class="tab-content"><button class="btn-add" onclick="showKeyModal()">+ 生成新 Key</button><div id="keyList"></div></div>
+    <div id="tabSettings" class="tab-content">
+      <div class="settings-section"><h3>修改密码</h3><label>原密码</label><input type="password" id="oldPass" placeholder="原密码"><label>新密码</label><input type="password" id="newPass" placeholder="新密码（至少6位）"><button class="btn-save" onclick="changePassword()">保存</button></div>
+      <div class="settings-section" id="settingsUsername"><h3>修改用户名</h3><label>新用户名</label><input type="text" id="newUsername" placeholder="新用户名（至少3位）"><label>当前密码（验证）</label><input type="password" id="userVerifyPass" placeholder="输入当前密码确认"><button class="btn-save" onclick="changeUsername()">保存</button></div>
+    </div>
+    <div id="tabUsers" class="tab-content"><button class="btn-add" onclick="showUserModal()">+ 添加用户</button><div id="userList"></div></div>
+  </main>
+</div>
+
+<!-- Key 模态框 -->
+<div class="modal-overlay" id="keyModal"><div class="modal"><h3>生成新 Key</h3><label>备注（可选）</label><input type="text" id="keyRemark" placeholder="如：客厅ESP01"><label>设备 ID</label><input type="text" id="keyDeviceId" placeholder="如：esp001" pattern="[a-zA-Z0-9_-]{1,32}" oninput="this.value=this.value.replace(/[^a-zA-Z0-9_-]/g,'')"><div class="modal-btns"><button class="modal-cancel" onclick="closeKeyModal()">取消</button><button class="modal-confirm" onclick="generateKey()">生成</button></div></div></div>
+
+<!-- 用户模态框 -->
+<div class="modal-overlay" id="userModal"><div class="modal"><h3>添加用户</h3><label>用户名</label><input type="text" id="newUserName" placeholder="用户名（至少3位）"><label>密码</label><input type="password" id="newUserPass" placeholder="密码（至少6位）"><label>角色</label><select id="newUserRole"><option value="user">普通用户</option><option value="admin">管理员</option></select><div class="modal-btns"><button class="modal-cancel" onclick="closeUserModal()">取消</button><button class="modal-confirm" onclick="createUser()">创建</button></div></div></div>
+
+<!-- 共享模态框 -->
+<div class="modal-overlay" id="shareModal"><div class="modal"><h3>共享设备</h3><label>输入目标用户名</label><input type="text" id="shareTargetUser" placeholder="对方用户名"><div class="modal-btns"><button class="modal-cancel" onclick="closeShareModal()">取消</button><button class="modal-confirm" onclick="doShare()">共享</button></div></div></div>
+
+<!-- 组合开关创建模态框 -->
+<div class="modal-overlay" id="switchComboModal"><div class="modal"><h3>创建组合开关</h3><label>名称</label><input type="text" id="switchComboName" placeholder="如：总开关"><label>选择引脚（至少2个）</label><div id="switchComboPinList" style="margin-bottom:12px"></div><div class="modal-btns"><button class="modal-cancel" onclick="closeSwitchComboModal()">取消</button><button class="modal-confirm" onclick="createSwitchCombo()">创建</button></div></div></div>
+
+<script>
+// ===== 星星生成 =====
+(function(){const bg=document.getElementById('bgLayer');for(let i=0;i<60;i++){const s=document.createElement('div');s.className='star';const sz=Math.random()*2.5+1;s.style.cssText='width:'+sz+'px;height:'+sz+'px;left:'+Math.random()*100+'%;top:'+Math.random()*70+'%;animation:twinkle '+(Math.random()*3+2)+'s ease-in-out infinite;animation-delay:'+Math.random()*3+'s';bg.appendChild(s);}})();
+
+// ===== 主题切换 =====
+let isLight=localStorage.getItem('iot_theme')==='light';
+function applyTheme(){
+  document.body.classList.toggle('light',isLight);
+  const icon=document.getElementById('themeIcon');
+  icon.innerHTML=isLight?'<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>':'<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>';
+}
+function toggleTheme(){isLight=!isLight;localStorage.setItem('iot_theme',isLight?'light':'dark');applyTheme();}
+applyTheme();
+
+let token=localStorage.getItem('iot_token')||'';
+let currentUser=null;let currentDeviceId=null;let onlineTimer=null;let statusTimer=null;
+let accountDisabled=false;
+
+const API_BASE='api.php?route=';
+function api(route,options={}){
+  if(accountDisabled) return Promise.reject({code:403,message:'该账号已被禁用'});
+  return new Promise((resolve,reject)=>{
+    let url='api.php?route='+encodeURIComponent(route);
+    if(options.params){Object.entries(options.params).forEach(([k,v])=>{url+='&'+encodeURIComponent(k)+'='+encodeURIComponent(v);});}
+    let fo={method:options.method||'GET',headers:{}};
+    if(token) fo.headers['Authorization']='Bearer '+token;
+    if(options.body){fo.method='POST';fo.headers['Content-Type']='application/json';fo.body=JSON.stringify(options.body);}
+    fetch(url,fo).then(r=>r.json()).then(d=>{if(d.code===401){logout();reject(d);}else if(d.code===403&&d.message==='账号已被禁用'){accountDisabled=true;showDisabledBanner();reject(d);}else resolve(d);}).catch(reject);
+  });
+}
+
+function showDisabledBanner(){
+  let b=document.getElementById('disabledBanner');
+  if(!b){b=document.createElement('div');b.id='disabledBanner';b.style.cssText='position:fixed;top:0;left:0;right:0;background:rgba(255,71,87,.95);color:#fff;text-align:center;padding:10px 48px 10px 20px;font-size:14px;font-weight:600;z-index:9999;letter-spacing:.5px';b.innerHTML='该账号已被禁用，请联系管理员 <span onclick="logout()" style="margin-left:12px;text-decoration:underline;cursor:pointer;font-weight:400">退出登录</span>';const c=document.createElement('span');c.textContent='\u00d7';c.style.cssText='position:absolute;right:14px;top:50%;transform:translateY(-50%);font-size:20px;cursor:pointer;line-height:1';c.onclick=function(){b.style.display='none';};b.appendChild(c);document.body.prepend(b);const a=document.getElementById('appPage');if(a)a.style.paddingTop='50px';}
+  b.style.display='block';
+}
+
+function toast(msg,type='success'){const e=document.createElement('div');e.className='toast '+type;e.textContent=msg;document.body.appendChild(e);setTimeout(()=>e.remove(),2500);}
+function escapeHtml(str){if(str==null)return'';const div=document.createElement('div');div.textContent=String(str);return div.innerHTML;}
+
+// ===== 登录 =====
+async function doLogin(){
+  const u=document.getElementById('loginUser').value.trim(),p=document.getElementById('loginPass').value;
+  if(!u||!p){document.getElementById('loginError').textContent='请输入用户名和密码';return;}
+  document.getElementById('loginError').textContent='';
+  try{const r=await fetch('api.php?route=login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:u,password:p})}).then(x=>x.json());if(r.code===200){token=r.data.token;currentUser=r.data.user;localStorage.setItem('iot_token',token);localStorage.setItem('iot_user',JSON.stringify(currentUser));showApp();}else{document.getElementById('loginError').textContent=r.message||'登录失败';}}catch(e){document.getElementById('loginError').textContent='网络请求失败，请检查网络';}
+}
+
+function logout(){token='';currentUser=null;accountDisabled=false;localStorage.removeItem('iot_token');localStorage.removeItem('iot_user');if(onlineTimer){clearInterval(onlineTimer);onlineTimer=null;}if(statusTimer){clearInterval(statusTimer);statusTimer=null;}const b=document.getElementById('disabledBanner');if(b)b.style.display='none';const a=document.getElementById('appPage');if(a){a.style.paddingTop='';a.style.display='none';}document.getElementById('loginPage').style.display='flex';}
+
+function showApp(){
+  if(!currentUser||!currentUser.id){const s=JSON.parse(localStorage.getItem('iot_user')||'{}');if(s.id)currentUser=s;else{logout();return;}}
+  document.getElementById('loginPage').style.display='none';
+  document.getElementById('appPage').style.display='flex';
+  document.getElementById('headerUsername').textContent=currentUser.username||'';
+  const re=document.getElementById('headerRole');
+  if(currentUser.role==='admin'){re.textContent='管理员';re.className='role-badge admin';}else{re.textContent='用户';re.className='role-badge user';}
+  renderTabs();loadDevices();
+}
+
+// ===== Tab 切换 =====
+function renderTabs(){const t=document.querySelectorAll('.tab-btn');const n=['设备管理','Key管理','设置'],ids=['tabDevices','tabKeys','tabSettings'];if(currentUser.role==='admin'){n.push('用户管理');ids.push('tabUsers');}t.forEach((b,i)=>{b.textContent=n[i]||'';b.className='tab-btn'+(i===0?' active':'');b.onclick=()=>switchTab(i,ids[i]);});t.forEach((b,i)=>{if(i>=n.length)b.style.display='none';else b.style.display='';});['tabDevices','tabKeys','tabSettings','tabUsers'].forEach(id=>{const e=document.getElementById(id);if(e)e.className='tab-content'+(id==='tabDevices'?' active':'');});}
+function switchTab(idx,tid){document.querySelectorAll('.tab-content').forEach(e=>e.classList.remove('active'));document.querySelectorAll('.tab-btn').forEach(e=>e.classList.remove('active'));document.getElementById(tid).classList.add('active');document.querySelectorAll('.tab-btn')[idx].classList.add('active');if(tid==='tabDevices')loadDevices();if(tid==='tabKeys')loadKeys();if(tid==='tabUsers')loadUsers();}
+
+// ===== 设备列表 =====
+async function loadDevices(){try{const r=await api('devices');const list=document.getElementById('deviceList');if(!r.data||r.data.length===0){list.innerHTML='<div class="empty">暂无设备，请先在 Key 管理中生成 Key</div>';return;}list.innerHTML='';r.data.forEach(d=>{const o=d.online==1,dis=d.status==='disabled',sh=d.is_shared==1;const dot=dis?'':o?'<span class="dev-dot on"></span>':'<span class="dev-dot off"></span>';const st=dis?'已禁用':o?'在线':'离线';const nm=escapeHtml(d.remark)||'未命名设备';const ow=d.owner_name&&currentUser.role==='admin'?'<span style="font-size:11px;color:var(--muted)">所有者: '+escapeHtml(d.owner_name)+'</span>':'';list.innerHTML+=`<div class="device-card"><div class="dev-header"><div><div class="dev-name">${nm}${sh?'<span class="shared-tag">已共享</span>':''}</div><div class="dev-id">${escapeHtml(d.device_id)} · ${d.pin_count||0} 个引脚</div>${ow}</div><span class="dev-status ${dis?'disabled':o?'online':'offline'}">${dot}${st}</span></div><div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap"><button style="background:var(--bg3);color:var(--muted);font-size:12px;padding:6px 14px;border-radius:6px" onclick="openDevice('${escapeHtml(d.device_id)}')">管理设备</button>${(currentUser.role==='admin'||d.user_id==currentUser.id)?`<button style="background:var(--bg3);color:#3498db;font-size:12px;padding:6px 14px;border-radius:6px" onclick="openShare('${escapeHtml(d.device_id)}')">共享设备</button>`:''}</div></div>`;});}catch(e){console.error(e);}}
+
+// ===== 设备详情 =====
+async function openDevice(did){
+  currentDeviceId=did;if(onlineTimer){clearInterval(onlineTimer);onlineTimer=null;}
+  const [devRes,pinsRes,logsRes,combosRes,switchCombosRes]=await Promise.all([api('devices'),api('devices/'+encodeURIComponent(did)+'/pins'),api('devices/'+encodeURIComponent(did)+'/logs',{params:{limit:5}}),api('combos',{params:{device_id:did}}),api('switch-combos',{params:{device_id:did}})]);
+  if(!devRes||!pinsRes)return;
+  const dev=(devRes.data||[]).find(d=>(d.device_id||d.key)===did);if(!dev)return;
+  const pins=pinsRes.data||[],logs=logsRes?.data||[],combos=combosRes?.data||[],switchCombos=switchCombosRes?.data||[];
+  const isOnline=dev.online==1,isDisabled=dev.status==='disabled';
+  const isOwner=currentUser.role==='admin'||dev.user_id==currentUser.id;
+  const canControl=isOwner||dev.is_shared==1;
+  const oc=isDisabled?'disabled':isOnline?'online':'offline';
+  const ot=isDisabled?'已禁用':isOnline?'在线':'离线';
+  const od=isDisabled?'':isOnline?'<span class="dev-dot on"></span>':'<span class="dev-dot off"></span>';
+  const lt=logs[0]||{};const rs=parseInt(lt.wifi_rssi)||0;const rc=rs>-50?'rssi-good':rs>-70?'rssi-mid':'rssi-bad';
+
+  let html=`<button class="back-btn" onclick="loadDevices()">← 返回设备列表</button><div class="device-detail"><div class="dev-header"><div><div class="dev-name">${escapeHtml(dev.remark)||'未命名设备'}</div><div class="dev-id">${escapeHtml(did)}</div></div><span class="dev-status ${oc}">${od}${ot}</span></div>`;
+
+  // 开关区域：普通引脚 + 组合开关混排
+  if(pins.length||switchCombos.length){
+    html+='<div class="switches">';
+    pins.forEach(p=>{html+=`<div class="switch-item"><div class="sw-info"><span class="sw-label">${escapeHtml(p.name)}</span><span class="sw-pin">GPIO${p.pin}</span>${isOwner?`<button class="sw-del" onclick="deletePin('${escapeHtml(did)}',${p.pin})">删除引脚</button>`:''}</div><label class="switch"><input type="checkbox" id="pin_${p.pin}" ${p.state?'checked':''} ${!canControl?'disabled':''} onchange="togglePin('${escapeHtml(did)}',${p.pin},this.checked)"><span class="slider"></span></label></div>`;});
+    switchCombos.forEach(sc=>{const pn=(sc.pins||[]).map(pin=>{const p=pins.find(x=>x.pin==pin);return p?p.name:'GPIO'+pin}).join(' + ');html+=`<div class="switch-item combo-switch"><div class="sw-info"><span class="sw-label">${escapeHtml(sc.name)}</span><span class="sw-pin">${escapeHtml(pn)}</span>${isOwner?`<button class="sw-del" onclick="deleteSwitchCombo(${sc.id})">删除</button>`:''}</div><label class="switch"><input type="checkbox" id="sc_${sc.id}" ${sc.all_on?'checked':''} ${!canControl?'disabled':''} onchange="toggleSwitchCombo(${sc.id},this.checked)"><span class="slider"></span></label></div>`;});
+    html+='</div>';
+  }
+
+  // 添加引脚 + 创建组合开关
+  if(isOwner){
+    html+=`<div class="pin-config"><h4>添加引脚</h4><div class="pin-add-row"><input type="text" id="newPinName" placeholder="名称（如客厅灯）"><input type="number" id="newPinNum" placeholder="GPIO号" min="0" max="255" style="max-width:80px"><button class="btn-pin-add" onclick="addPin('${escapeHtml(did)}')">添加</button></div>`;
+    if(pins.length>=2) html+=`<button class="btn-sc-add" style="width:100%;margin-top:4px" onclick="showSwitchComboCreator('${escapeHtml(did)}')">+ 创建组合开关</button>`;
+    html+='</div>';
+  }
+
+  // 预设区域
+  if(canControl&&pins.length>0){
+    html+='<div class="combo-section"><h4>预设</h4>';
+    if(combos.length>0){combos.forEach(c=>{const desc=(c.items||[]).map(it=>{const p=pins.find(x=>x.pin==it.pin);return(p?p.name:'GPIO'+it.pin)+'→'+(it.state?'开':'关')}).join('，');html+=`<div class="combo-card"><div><div class="combo-name">${escapeHtml(c.name)}</div><div class="combo-desc">${escapeHtml(desc)}</div></div><div class="combo-actions"><button class="btn-combo-exec" onclick="execCombo(${c.id})">执行</button>${isOwner?`<button class="btn-combo-del" onclick="deleteCombo(${c.id})">删除</button>`:''}</div></div>`;});}else{html+='<div style="color:var(--muted);font-size:12px;margin-bottom:8px">暂无预设，点击下方创建</div>';}
+    html+=`<button class="btn-combo-add" style="width:100%;margin-bottom:8px" onclick="showComboCreator('${escapeHtml(did)}')">+ 创建预设</button><div id="comboCreator" style="display:none"><input type="text" id="comboName" placeholder="预设名称（如：全开）" style="width:100%;padding:8px 10px;background:var(--bg3);border:1px solid var(--rule);border-radius:5px;color:var(--ink);font-size:13px;margin-bottom:8px;outline:none"><div class="combo-pin-list" id="comboPinList"></div><button class="btn-combo-add" style="width:100%" onclick="createCombo('${escapeHtml(did)}')">保存预设</button></div></div>`;
+  }
+
+  if(logs.length>0){html+=`<div class="detail-wifi"><div class="wifi-item"><div class="wifi-label">WiFi</div><div class="wifi-val">${escapeHtml(lt.wifi_ssid)||'unknown'}</div></div><div class="wifi-item"><div class="wifi-label">信号强度</div><div class="wifi-val ${rc}">${rs} dBm</div></div><div class="wifi-item"><div class="wifi-label">IP 地址</div><div class="wifi-val">${escapeHtml(lt.ip)||'-'}</div></div><div class="wifi-item"><div class="wifi-label">最后上报</div><div class="wifi-val" style="font-size:12px">${escapeHtml(lt.created_at)||'-'}</div></div></div>`;}else{html+='<div style="color:var(--muted);font-size:13px;margin-top:12px">暂无设备上报数据</div>';}
+  if(logs.length){html+=`<div class="log-section"><h4>WiFi 信号记录（最近 ${logs.length} 条）</h4><div style="overflow-x:auto"><table class="log-table"><tr><th>时间</th><th>WiFi</th><th>信号</th><th>IP</th></tr>`;logs.forEach(l=>{const r2=parseInt(l.wifi_rssi)||0;const rc2=r2>-50?'rssi-good':r2>-70?'rssi-mid':'rssi-bad';html+=`<tr><td>${escapeHtml(l.created_at)}</td><td>${escapeHtml(l.wifi_ssid)}</td><td class="${rc2}">${l.wifi_rssi} dBm</td><td>${escapeHtml(l.ip)}</td></tr>`;});html+='</table></div></div>';}
+  // OTA 固件更新区域
+  html+=`<div class="ota-section"><h4>OTA 固件更新</h4>`;
+  if(isOwner){
+    html+=`<div class="ota-upload-row"><input type="file" id="otaFile" accept=".bin"><input type="text" id="otaVersion" placeholder="版本号(可选)"><button class="btn-ota" id="otaUploadBtn" onclick="uploadOTA('${escapeHtml(did)}')">上传固件</button></div><div class="ota-progress" id="otaProgress" style="display:none"><div class="ota-bar-wrap"><div class="ota-bar" id="otaBar"></div></div><div class="ota-progress-text" id="otaProgressText">准备上传...</div></div>`;
+  }
+  html+=`<div class="ota-status-list" id="otaStatusList"></div></div>`;
+  html+='</div>';
+  document.getElementById('deviceList').innerHTML=html;
+  loadOTAStatus(did);
+  if(statusTimer)clearInterval(statusTimer);
+  statusTimer=setInterval(refreshPinStates,5000);
+}
+
+// ===== OTA 固件更新 =====
+async function loadOTAStatus(did){
+  try{
+    const r=await api('ota/status',{params:{device_id:did}});
+    const el=document.getElementById('otaStatusList');
+    if(!el)return;
+    if(!r.data||r.data.length===0){el.innerHTML='<div style="color:var(--muted);font-size:12px">暂无更新记录</div>';return;}
+    const statusMap={pending:'等待更新',updating:'更新中',done:'已完成',failed:'更新失败'};
+    el.innerHTML=r.data.map(o=>`<div class="ota-record"><div class="ota-info"><span class="ota-ver">${escapeHtml(o.version)||'v?-??'}</span><span class="ota-size">${escapeHtml(o.file_size_text)}</span><span class="ota-time">${escapeHtml(o.created_at)}</span></div><span class="ota-badge ${o.status}">${statusMap[o.status]||o.status}</span>${(o.status==='pending'||o.status==='failed')?`<button class="btn-ota-cancel" onclick="cancelOTA(${o.id},'${escapeHtml(did)}')">取消</button>`:''}</div>`).join('');
+  }catch(e){}
+}
+
+async function uploadOTA(did){
+  const fileInput=document.getElementById('otaFile');
+  const versionInput=document.getElementById('otaVersion');
+  const btn=document.getElementById('otaUploadBtn');
+  const progressDiv=document.getElementById('otaProgress');
+  const bar=document.getElementById('otaBar');
+  const progressText=document.getElementById('otaProgressText');
+  if(!fileInput||!fileInput.files[0]){toast('请选择固件文件','error');return;}
+  const file=fileInput.files[0];
+  if(!file.name.endsWith('.bin')){toast('仅支持 .bin 文件','error');return;}
+  btn.disabled=true;
+  progressDiv.style.display='block';
+  bar.style.width='0%';
+  progressText.textContent='上传中...';
+  try{
+    const fd=new FormData();
+    fd.append('firmware',file);
+    fd.append('device_id',did);
+    fd.append('version',versionInput?versionInput.value.trim():'');
+    const xhr=new XMLHttpRequest();
+    xhr.open('POST',API_BASE+'ota/upload');
+    xhr.setRequestHeader('Authorization','Bearer '+localStorage.getItem('iot_token'));
+    xhr.upload.onprogress=function(e){
+      if(e.lengthComputable){const pct=Math.round(e.loaded/e.total*100);bar.style.width=pct+'%';progressText.textContent='上传 '+pct+'%';}
+    };
+    xhr.onload=function(){
+      btn.disabled=false;
+      if(xhr.status===201){
+        const r=JSON.parse(xhr.responseText);
+        toast(r.message||'固件已上传');
+        progressText.textContent='上传完成，等待设备轮询...';
+        bar.style.width='100%';
+        if(fileInput)fileInput.value='';
+        if(versionInput)versionInput.value='';
+        loadOTAStatus(did);
+        // 10秒后刷新状态
+        setTimeout(()=>loadOTAStatus(did),10000);
+      }else{
+        let msg='上传失败';
+        try{const r=JSON.parse(xhr.responseText);msg=r.message||msg;}catch(e){}
+        toast(msg,'error');
+        progressDiv.style.display='none';
+      }
+    };
+    xhr.onerror=function(){btn.disabled=false;toast('网络错误','error');progressDiv.style.display='none';};
+    xhr.send(fd);
+  }catch(e){btn.disabled=false;toast('上传失败','error');progressDiv.style.display='none';}
+}
+
+async function cancelOTA(otaId,did){
+  if(!confirm('确认取消此固件更新？'))return;
+  try{const r=await api('ota/'+otaId,{method:'DELETE'});if(r.code===200){toast('已取消');loadOTAStatus(did);}else toast(r.message,'error');}catch(e){toast('操作失败','error');}
+}
+
+// 同步刷新：普通引脚 + 组合开关
+async function refreshPinStates(){
+  if(!currentDeviceId)return;
+  try{
+    const [pr,scr]=await Promise.all([api('devices/'+encodeURIComponent(currentDeviceId)+'/pins'),api('switch-combos',{params:{device_id:currentDeviceId}})]);
+    if(pr.data)pr.data.forEach(p=>{const cb=document.getElementById('pin_'+p.pin);if(cb)cb.checked=p.state==1;});
+    if(scr.data)scr.data.forEach(sc=>{const cb=document.getElementById('sc_'+sc.id);if(cb)cb.checked=!!sc.all_on;});
+  }catch(e){}
+}
+
+async function togglePin(did,pin,state){try{const r=await api('devices/'+encodeURIComponent(did)+'/control',{method:'POST',body:{pin,state:state?1:0}});if(r.code===200)toast('已设为 '+r.data.state_name);else toast(r.message,'error');}catch(e){toast('操作失败','error');}}
+async function addPin(did){const n=document.getElementById('newPinName').value.trim(),p=parseInt(document.getElementById('newPinNum').value);if(!n||isNaN(p)){toast('请填写名称和引脚号','error');return;}try{const r=await api('devices/'+encodeURIComponent(did)+'/pins',{method:'POST',body:{name:n,pin:p,sort_order:0}});if(r.code===201){toast('引脚已添加');openDevice(did);}else toast(r.message,'error');}catch(e){toast('添加失败','error');}}
+async function deletePin(did,pin){if(!confirm('确认删除该引脚？'))return;try{const r=await api('devices/'+encodeURIComponent(did)+'/pins/'+pin,{method:'DELETE'});if(r.code===200){toast('已删除');openDevice(did);}else toast(r.message,'error');}catch(e){toast('删除失败','error');}}
+
+// ===== 共享 =====
+let shareTargetDeviceId=null;
+async function openShare(did){shareTargetDeviceId=did;document.getElementById('shareTargetUser').value='';document.getElementById('shareModal').classList.add('show');try{const r=await api('devices/'+encodeURIComponent(did)+'/shares');const list=document.createElement('div');list.className='share-list';list.id='shareListInner';if(r.data&&r.data.length>0){r.data.forEach(s=>{list.innerHTML+=`<div class="share-item"><span class="share-name">${escapeHtml(s.shared_to_name)}</span><button class="btn-cancel" onclick="cancelShare('${did}',${s.shared_to_id})">取消共享</button></div>`;});}else{list.innerHTML='<div style="color:var(--muted);font-size:12px;text-align:center;padding:8px">暂未共享给任何人</div>';}const ex=document.getElementById('shareListInner');if(ex)ex.remove();document.getElementById('shareModal').querySelector('.modal').appendChild(list);}catch(e){}}
+function closeShareModal(){document.getElementById('shareModal').classList.remove('show');const sl=document.getElementById('shareListInner');if(sl)sl.remove();}
+async function doShare(){const t=document.getElementById('shareTargetUser').value.trim();if(!t){toast('请输入用户名','error');return;}try{const r=await api('devices/'+encodeURIComponent(shareTargetDeviceId)+'/share',{method:'POST',body:{username:t}});if(r.code===201){toast('共享成功');openShare(shareTargetDeviceId);}else toast(r.message,'error');}catch(e){toast('共享失败','error');}}
+async function cancelShare(did,sid){if(!confirm('确认取消共享？'))return;try{const r=await api('devices/'+encodeURIComponent(did)+'/share/'+sid,{method:'DELETE'});if(r.code===200){toast('已取消');openShare(did);}else toast(r.message,'error');}catch(e){toast('操作失败','error');}}
+
+// ===== Key 管理 =====
+async function loadKeys(){try{const r=await api('keys');const list=document.getElementById('keyList');if(!r.data||r.data.length===0){list.innerHTML='<div class="empty">暂无 Key，点击上方按钮生成</div>';return;}list.innerHTML='';r.data.forEach(k=>{const a=k.status==='active';const rm=k.remark||'无备注';const di=k.device_id?' · '+escapeHtml(k.device_id):'';list.innerHTML+=`<div class="key-card"><div><div class="key-val">${escapeHtml(k.key)}</div><div class="key-remark">${escapeHtml(rm)}${di}</div></div><div style="display:flex;align-items:center;gap:8px"><span class="key-status ${a?'active':'disabled'}">${a?'有效':'禁用'}</span><div class="key-actions"><button class="btn-sm ${a?'toggle-off':'toggle-on'}" onclick="toggleKeyStatus('${escapeHtml(k.key)}',${a})">${a?'禁用':'启用'}</button><button class="btn-sm btn-del" onclick="deleteKey('${escapeHtml(k.key)}')">删除</button></div></div></div>`;});}catch(e){console.error(e);}}
+function showKeyModal(){document.getElementById('keyRemark').value='';document.getElementById('keyDeviceId').value='';document.getElementById('keyModal').classList.add('show');}
+function closeKeyModal(){document.getElementById('keyModal').classList.remove('show');}
+async function generateKey(){const rm=document.getElementById('keyRemark').value.trim(),di=document.getElementById('keyDeviceId').value.trim();if(!di){toast('设备ID不能为空','error');return;}try{const r=await api('keys',{method:'POST',body:{remark:rm,device_id:di}});if(r.code===201){toast('Key 已生成');closeKeyModal();loadKeys();}else toast(r.message,'error');}catch(e){toast('生成失败','error');}}
+async function toggleKeyStatus(key,a){const ac=a?'disable':'enable';try{const r=await api('keys/'+encodeURIComponent(key)+'/'+ac,{method:'PUT'});if(r.code===200){toast(a?'已禁用':'已启用');loadKeys();}else toast(r.message,'error');}catch(e){toast('操作失败','error');}}
+async function deleteKey(key){if(!confirm('确认删除该 Key？'))return;try{const r=await api('keys/'+encodeURIComponent(key),{method:'DELETE'});if(r.code===200){toast('已删除');loadKeys();}else toast(r.message,'error');}catch(e){toast('删除失败','error');}}
+
+// ===== 预设 =====
+async function showComboCreator(did){const cr=document.getElementById('comboCreator');if(cr.style.display==='none'){try{const r=await api('devices/'+encodeURIComponent(did)+'/pins');const pl=document.getElementById('comboPinList');pl.innerHTML='';(r.data||[]).forEach(p=>{pl.innerHTML+=`<div class="combo-pin-item"><label><input type="checkbox" class="combo-pin-check" data-pin="${p.pin}"> ${escapeHtml(p.name)} (GPIO${p.pin})</label><select class="combo-pin-state" data-pin="${p.pin}" style="background:var(--bg2);color:var(--ink);border:1px solid var(--rule);border-radius:4px;padding:4px 8px;font-size:12px"><option value="1">开</option><option value="0">关</option></select></div>`;});}catch(e){}cr.style.display='block';}else{cr.style.display='none';}}
+async function createCombo(did){const n=document.getElementById('comboName').value.trim();if(!n){toast('请输入预设名称','error');return;}const chks=document.querySelectorAll('.combo-pin-check:checked');if(chks.length===0){toast('至少选择一个引脚','error');return;}const items=[];chks.forEach(c=>{const pin=c.dataset.pin;const st=document.querySelector('.combo-pin-state[data-pin="'+pin+'"]').value;items.push({pin:parseInt(pin),state:parseInt(st)});});try{const r=await api('combos',{method:'POST',body:{device_id:did,name:n,items}});if(r.code===201){toast('预设已创建');openDevice(did);}else toast(r.message,'error');}catch(e){toast('创建失败','error');}}
+async function execCombo(cid){try{const r=await api('combos/'+cid+'/execute',{method:'POST'});if(r.code===200){const names=(r.data.results||[]).map(x=>x.name+'→'+(x.state?'开':'关')).join('，');toast('已执行：'+names);refreshPinStates();}else toast(r.message,'error');}catch(e){toast('执行失败','error');}}
+async function deleteCombo(cid){if(!confirm('确认删除该预设？'))return;try{const r=await api('combos/'+cid,{method:'DELETE'});if(r.code===200){toast('已删除');openDevice(currentDeviceId);}else toast(r.message,'error');}catch(e){toast('删除失败','error');}}
+
+// ===== 组合开关 =====
+async function showSwitchComboCreator(did){document.getElementById('switchComboName').value='';const pl=document.getElementById('switchComboPinList');pl.innerHTML='';try{const r=await api('devices/'+encodeURIComponent(did)+'/pins');(r.data||[]).forEach(p=>{pl.innerHTML+=`<div class="combo-pin-item"><label><input type="checkbox" class="switch-combo-pin-check" data-pin="${p.pin}"> ${escapeHtml(p.name)} (GPIO${p.pin})</label></div>`;});}catch(e){}document.getElementById('switchComboModal').classList.add('show');document.getElementById('switchComboModal').dataset.deviceId=did;}
+function closeSwitchComboModal(){document.getElementById('switchComboModal').classList.remove('show');}
+async function createSwitchCombo(){const did=document.getElementById('switchComboModal').dataset.deviceId;const n=document.getElementById('switchComboName').value.trim();if(!n){toast('请输入组合开关名称','error');return;}const chks=document.querySelectorAll('.switch-combo-pin-check:checked');if(chks.length<2){toast('组合开关至少需要选择2个引脚','error');return;}const pins=[];chks.forEach(c=>pins.push(parseInt(c.dataset.pin)));try{const r=await api('switch-combos',{method:'POST',body:{device_id:did,name:n,pins}});if(r.code===201){toast('组合开关已创建');closeSwitchComboModal();openDevice(did);}else toast(r.message,'error');}catch(e){toast('创建失败','error');}}
+async function toggleSwitchCombo(scid,checked){const state=checked?1:0;try{const r=await api('switch-combos/'+scid+'/toggle',{method:'POST',body:{state}});if(r.code===200){toast(checked?'已全部开启':'已全部关闭');refreshPinStates();}else{toast(r.message,'error');openDevice(currentDeviceId);}}catch(e){toast('操作失败','error');openDevice(currentDeviceId);}}
+async function deleteSwitchCombo(scid){if(!confirm('确认删除该组合开关？'))return;try{const r=await api('switch-combos/'+scid,{method:'DELETE'});if(r.code===200){toast('已删除');openDevice(currentDeviceId);}else toast(r.message,'error');}catch(e){toast('删除失败','error');}}
+
+// ===== 用户管理 =====
+async function loadUsers(){if(currentUser.role!=='admin')return;try{const r=await api('admin/users');const list=document.getElementById('userList');if(!r.data||r.data.length===0){list.innerHTML='<div class="empty">暂无其他用户</div>';return;}list.innerHTML='';r.data.forEach(u=>{const isSelf=u.id===currentUser.id;const rb=u.role==='admin'?'<span class="role-badge admin" style="font-size:10px;padding:2px 6px">管理员</span>':'<span class="role-badge user" style="font-size:10px;padding:2px 6px">用户</span>';const db=u.status==='disabled'?'<span style="font-size:11px;color:var(--warn);margin-left:6px">已禁用</span>':'';const acts=isSelf?'':`<button class="btn-sm ${u.status==='active'?'btn-user-disable':'btn-user-enable'}" onclick="toggleUserStatus(${u.id},${u.status==='active'})">${u.status==='active'?'禁用':'启用'}</button><button class="btn-sm btn-del" onclick="resetUserPassword(${u.id})">改密码</button><button class="btn-sm btn-del" onclick="deleteUser(${u.id})">删除</button>`;list.innerHTML+=`<div class="user-card"><div class="user-info"><div class="user-name">${escapeHtml(u.username)} ${rb} ${db} ${isSelf?'<span style="font-size:11px;color:var(--muted);margin-left:4px">(当前账号)</span>':''}</div><div class="user-meta">创建于 ${u.created_at||'-'}</div></div><div style="display:flex;gap:6px;flex-wrap:wrap">${acts}</div></div>`;});}catch(e){console.error(e);}}
+function showUserModal(){document.getElementById('newUserName').value='';document.getElementById('newUserPass').value='';document.getElementById('newUserRole').value='user';document.getElementById('userModal').classList.add('show');}
+function closeUserModal(){document.getElementById('userModal').classList.remove('show');}
+async function createUser(){const un=document.getElementById('newUserName').value.trim(),pw=document.getElementById('newUserPass').value,ro=document.getElementById('newUserRole').value;if(!un||!pw){toast('请填写完整','error');return;}try{const r=await api('admin/users',{method:'POST',body:{username:un,password:pw,role:ro}});if(r.code===201){toast('用户已创建');closeUserModal();loadUsers();}else toast(r.message,'error');}catch(e){toast('创建失败','error');}}
+async function toggleUserStatus(uid,dis){try{const r=await api('admin/users/'+uid+'/'+(dis?'disable':'enable'),{method:'PUT'});if(r.code===200){toast(dis?'已禁用':'已启用');loadUsers();}else toast(r.message,'error');}catch(e){toast('操作失败','error');}}
+async function resetUserPassword(uid){const np=prompt('请输入新密码（至少6位）：');if(!np||np.length<6){toast('密码至少6位','error');return;}try{const r=await api('admin/users/'+uid+'/password',{method:'POST',body:{new_password:np}});if(r.code===200)toast('密码已修改');else toast(r.message,'error');}catch(e){toast('操作失败','error');}}
+async function deleteUser(uid){if(!confirm('确认删除该用户？其所有设备和 Key 将一并删除！'))return;try{const r=await api('admin/users/'+uid,{method:'DELETE'});if(r.code===200){toast('已删除');loadUsers();loadDevices();}else toast(r.message,'error');}catch(e){toast('删除失败','error');}}
+
+// ===== 设置 =====
+async function changePassword(){const op=document.getElementById('oldPass').value,np=document.getElementById('newPass').value;if(!op||!np){toast('请填写完整','error');return;}try{const r=await api('user/password',{method:'POST',body:{old_password:op,new_password:np}});if(r.code===200){toast('密码已修改');document.getElementById('oldPass').value='';document.getElementById('newPass').value='';}else toast(r.message,'error');}catch(e){toast('修改失败','error');}}
+async function changeUsername(){const nn=document.getElementById('newUsername').value.trim(),vp=document.getElementById('userVerifyPass').value;if(!nn||!vp){toast('请填写完整','error');return;}try{const r=await api('user/username',{method:'POST',body:{new_username:nn,password:vp}});if(r.code===200){toast('用户名已修改，请重新登录');currentUser.username=nn;localStorage.setItem('iot_user',JSON.stringify(currentUser));document.getElementById('headerUsername').textContent=nn;document.getElementById('newUsername').value='';document.getElementById('userVerifyPass').value='';}else toast(r.message,'error');}catch(e){toast('修改失败','error');}}
+
+fetch('api.php?route=version').then(r=>r.json()).then(d=>{if(d.code===200)document.getElementById('backendVer').textContent=d.data.version||'未知';}).catch(()=>{document.getElementById('backendVer').textContent='未知';});
+
+if(token){const s=JSON.parse(localStorage.getItem('iot_user')||'{}');if(s.id){currentUser=s;showApp();}else{logout();}}
+</script>
+</body>
+</html>

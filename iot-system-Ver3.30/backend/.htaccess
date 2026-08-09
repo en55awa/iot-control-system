@@ -1,0 +1,19 @@
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    # 禁止直接访问敏感 PHP 文件
+    RewriteRule ^(config|jwt|key_manager|secrets)\.php$ - [F,L]
+</IfModule>
+
+<FilesMatch "^(config|jwt|key_manager|secrets)\.php$">
+    Order deny,allow
+    Deny from all
+</FilesMatch>
+
+# 禁止访问 .env 文件
+<FilesMatch "^\.env$">
+    Order deny,allow
+    Deny from all
+</FilesMatch>
+
+# 禁止目录列表
+Options -Indexes

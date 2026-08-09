@@ -1,0 +1,23 @@
+﻿#ifndef CONFIG_H
+#define CONFIG_H
+
+// ============== WiFi 配置 ==============
+#define WIFI_SSID     "你的WiFi名称"
+#define WIFI_PASSWORD "你的WiFi密码"
+
+// ============== 服务器配置 ==============
+// 共享主机不支持 MQTT，改用 HTTP Polling
+#define SERVER_HOST   "en55.fun/IOTen55"     // 如 "example.com"（不要 https://）
+#define SERVER_PORT   80                   // HTTP 端口（共享主机通常用80）
+#define POLL_INTERVAL 1000                 // 轮询间隔 毫秒（5秒=5000，可调2000-10000）
+
+// ============== 设备认证 Key（8字节）=============
+#define DEVICE_KEY    "你的设备Key"   // 16字符hex，由后端生成
+
+// ============== 设备信息 ==============
+#define DEVICE_ID     "esp001"
+
+// ============== 调试 ==============
+#define SERIAL_BAUD   9600
+
+#endif
