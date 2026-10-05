@@ -19,9 +19,10 @@ ESP8266 + PHP + MySQL HTTP Polling 架构的物联网控制平台。
 | [`v3.30`](../../tree/v3.30) | v3.30 | OTA 固件更新、Web 端远程刷机 | 远程固件维护 |
 | [`v3.31`](../../tree/v3.31) | v3.31 | JWT 退出销毁、OTA 状态管理修复 | 安全修复版 |
 | [`v3.35`](../../tree/v3.35) | v3.35 | OTA 记录删除、PHP 超时保护、按钮配色优化 | 稳定版 |
-| [`v4.35`](../../tree/v4.35) | v4.35 | 开关隐藏、自定义指令系统（定时开关/延时关闭/定时重启） | **推荐部署版本** |
+| [`v4.35`](../../tree/v4.35) | v4.35 | 开关隐藏、自定义指令系统（定时开关/延时关闭/定时重启） | 稳定版 |
+| [`v4.51`](../../tree/v4.51) | v4.51 | 事件上报系统、固件稳定性优化、登录记录增强、固件版本显示 | **推荐部署版本** |
 
-> **建议新用户直接使用 `v4.35` 分支。** 包含全部安全修复、OTA 功能改进、PHP 进程超时保护、开关隐藏和自定义指令系统。
+> **建议新用户直接使用 `v4.51` 分支。** 包含全部安全修复、OTA 功能改进、PHP 进程超时保护、开关隐藏、自定义指令系统、设备事件上报、登录记录、固件稳定性全面优化。
 
 ### 如何获取某个版本
 
@@ -29,10 +30,10 @@ ESP8266 + PHP + MySQL HTTP Polling 架构的物联网控制平台。
 # 克隆仓库后切换到对应分支
 git clone https://github.com/en55awa/iot-control-system.git
 cd iot-control-system
-git checkout v4.35
+git checkout v4.51
 
 # 或只下载某个分支
-git clone -b v4.35 https://github.com/en55awa/iot-control-system.git
+git clone -b v4.51 https://github.com/en55awa/iot-control-system.git
 ```
 
 ---
@@ -74,9 +75,10 @@ git clone -b v4.35 https://github.com/en55awa/iot-control-system.git
 | v3.30 | OTA 固件更新、Web 端远程刷机 | 远程固件维护 |
 | v3.31 | JWT 退出销毁、OTA 状态管理修复 | 安全修复版 |
 | v3.35 | OTA 记录删除、PHP 超时保护、按钮配色优化 | 稳定版 |
-| v4.35 | 开关隐藏、自定义指令系统（定时开关/延时关闭/定时重启） | **推荐部署版本** |
+| v4.35 | 开关隐藏、自定义指令系统（定时开关/延时关闭/定时重启） | 稳定版 |
+| v4.51 | 事件上报系统、固件稳定性全面优化、登录记录增强、固件版本显示 | **推荐部署版本** |
 
-> **建议新用户直接使用 v4.35。** 如需从旧版升级，请阅读下方「版本升级路径」章节。
+> **建议新用户直接使用 v4.51。** 如需从旧版升级，请阅读下方「版本升级路径」章节。
 
 ---
 
@@ -177,7 +179,7 @@ define('RESET_KEY', '你的随机密钥');
 
 ## 部署步骤（全新安装）
 
-以 **v4.35** 为例，其他版本步骤相同。
+以 **v4.51** 为例，其他版本步骤相同。
 
 ### 第一步：创建数据库
 
@@ -216,6 +218,9 @@ CREATE TABLE IF NOT EXISTS device_keys (
     remark VARCHAR(100) DEFAULT '',
     status ENUM('active','disabled') NOT NULL DEFAULT 'active',
     last_seen DATETIME DEFAULT NULL,
+    ota_status TINYINT NOT NULL DEFAULT 0,
+    ota_sent_at TIMESTAMP NULL DEFAULT NULL,
+    firmware_version VARCHAR(16) DEFAULT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     KEY idx_user (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -246,8 +251,34 @@ CREATE TABLE IF NOT EXISTS login_attempts (
     id INT AUTO_INCREMENT PRIMARY KEY,
     ip VARCHAR(45) NOT NULL,
     username VARCHAR(50) DEFAULT '',
+    user_id INT DEFAULT NULL,
+    password_hash VARCHAR(255) DEFAULT NULL,
+    status ENUM('success','failed','blocked','disabled') NOT NULL DEFAULT 'failed',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_ip_time (ip, created_at),
+    KEY idx_user (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 免密登录记录表（v4.48+）
+CREATE TABLE IF NOT EXISTS tokenless_logs (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    username VARCHAR(50) NOT NULL,
+    ip VARCHAR(45) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_user (user_id),
     KEY idx_ip_time (ip, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 设备事件表（v4.50+）
+CREATE TABLE IF NOT EXISTS device_events (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    device_id VARCHAR(32) NOT NULL,
+    event_type VARCHAR(32) NOT NULL,
+    details TEXT DEFAULT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_device_time (device_id, created_at),
+    KEY idx_event_type (event_type)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 设备共享表（v2.0+）
@@ -301,14 +332,14 @@ CREATE TABLE IF NOT EXISTS device_switch_combo_pins (
     KEY idx_switch (switch_combo_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- 插入默认管理员（用户名: en55，密码: 888888）
+-- 插入默认管理员（用户名: admin，密码: admin123）
 INSERT INTO users (username, password_hash, role, status)
-VALUES ('en55', '$2y$10$N9qo8uLOickgx2ZMRZoMy.Mrq9qOJ4JqKqXmQJqKqXmQJqKqXmQJq', 'admin', 'active');
+VALUES ('admin', '$2y$10$N9qo8uLOickgx2ZMRZoMy.Mrq9qOJ4JqKqXmQJqKqXmQJqKqXmQJq', 'admin', 'active');
 ```
 
 > **注意：** 上面的密码哈希是示例占位符。请通过 PHP 生成正确的 bcrypt 哈希：
 > ```php
-> <?php echo password_hash('888888', PASSWORD_DEFAULT); ?>
+> <?php echo password_hash('admin123', PASSWORD_DEFAULT); ?>
 > ```
 > 将输出的哈希值替换到上面的 SQL 中。或者部署后使用 `tool/resetadmin.php` 重置密码。
 
@@ -336,6 +367,8 @@ upgrade_db_v3.php（如有）
 upgrade_db_ota.php（v3.30+）
 upgrade_db_ota_status.php（v3.33+）
 upgrade_db_v435.php（v4.35+）
+upgrade_db_v439.php（v4.48+）
+upgrade_db_v450.php（v4.50+）
 tool/resetadmin.php（如有）
 ```
 
@@ -357,12 +390,20 @@ tool/resetadmin.php（如有）
    - 创建 `device_schedules` 表（自定义指令系统）
    - 确保 `device_status.updated_at` 为 ON UPDATE CURRENT_TIMESTAMP
 
+4. `http://你的域名/upgrade_db_v439.php`（v4.48+），脚本会自动：
+   - `login_attempts` 表新增 `user_id`、`password_hash`、`status` 字段
+   - 创建 `tokenless_logs` 免密登录记录表
+
+5. `http://你的域名/upgrade_db_v450.php`（v4.50+），脚本会自动：
+   - 创建 `device_events` 设备事件表
+   - `device_keys` 表新增 `firmware_version` 字段
+
 执行成功后脚本自动删除，如未删除请手动删除。
 
 ### 第六步：登录并配置
 
 1. 访问 `http://你的域名/`
-2. 默认账号：`en55` / `888888`
+2. 默认账号：`admin` / `admin123`
 3. **立即修改密码**（进入用户设置）
 4. 在 Key 管理中生成新设备 Key
 5. 将生成的 Key 填入 `config.h`
@@ -441,6 +482,26 @@ tool/resetadmin.php（如有）
 > - 自定义指令：定时开关、延时关闭、定时重启，服务端自动执行
 > - 包含 v3.34/v3.35 的全部修复
 
+### v4.35 → v4.51
+
+1. 备份现有数据库和文件
+2. 上传 v4.51 的所有文件（覆盖）
+3. 浏览器依次访问迁移脚本：
+   - `upgrade_db_v439.php` — login_attempts 表升级 + tokenless_logs 表
+   - `upgrade_db_v450.php` — device_events 表 + firmware_version 字段
+4. 执行成功后脚本自动删除
+5. 重新编译并烧录固件（v4.51 固件稳定性全面优化，必须更新）
+
+> **v4.51 新功能**：
+> - 设备事件上报系统（boot / wifi_connect / ota_start / ota_failed 等）
+> - 固件版本上报与显示
+> - 固件内存全面优化（零堆分配，解决长时间运行碎片化掉线）
+> - 看门狗复位修复（事件上报改 GET + 独立 WiFiClient + 显式喂狗）
+> - 登录记录功能增强（全量登录日志 + 免密登录记录）
+> - 包含 v4.37 ~ v4.50 的全部修复
+
+> **跨版本升级**：从 v3.22 或 v3.30 直接升级到 v4.51 也是安全的。依次执行 `upgrade_db_ota.php` → `upgrade_db_ota_status.php` → `upgrade_db_v435.php` → `upgrade_db_v439.php` → `upgrade_db_v450.php`，所有脚本均使用幂等操作。
+
 > **v3.35 包含的中间版本修复**：
 > - v3.32：OTA 状态实时刷新 + 回报机制优化
 > - v3.33：OTA 状态追踪改为服务端自动检测（固件大幅精简）
@@ -486,6 +547,7 @@ tool/resetadmin.php（如有）
 | 方法 | 路由 | 说明 |
 |------|------|------|
 | GET | `poll?device_id=xxx&key=xxx&wifi=xxx&rssi=xxx&ip=xxx` | ESP8266 轮询+上报 |
+| GET | `event?device_id=xxx&key=xxx&event_type=xxx&details=xxx` | 设备事件上报（v4.50+） |
 | POST | `login` | 登录 |
 | POST | `logout` | 退出登录，使旧 Token 失效（v3.31+） |
 | GET | `version` | 获取版本号（v2.10+） |
@@ -562,7 +624,7 @@ http://localhost/tool/resetadmin.php
 http://你的域名/tool/resetadmin.php?key=你的RESET_KEY
 ```
 
-执行成功后密码重置为 `88888888`，文件自动删除。
+执行成功后密码重置为 `admin123456`，文件自动删除。
 
 ---
 
@@ -578,6 +640,9 @@ http://你的域名/tool/resetadmin.php?key=你的RESET_KEY
 - PHP 进程超时保护（v3.34+，防止进程卡死导致设备掉线）
 - 设备 Key 格式校验（16位 hex）
 - 登录失败速率限制（5分钟5次锁定）
+- 全量登录日志记录（v4.48+，成功/失败/封禁/禁用全记录）
+- 免密登录记录（v4.48+）
+- 设备事件上报（v4.50+，boot/wifi/ota 全链路追踪）
 - 错误信息不泄露给客户端（写入服务器日志）
 - CORS 限制
 - 前端 XSS 转义
